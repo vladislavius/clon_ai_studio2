@@ -85,30 +85,21 @@ const PERIODS = [
 ];
 
 const analyzeTrend = (vals: StatisticValue[], inverted: boolean = false) => {
-    if (!vals || vals.length < 2) return { condition: 'non_existence' as WiseCondition, change: 0, current: 0 };
+    if (!vals || vals.length < 2) return { condition: 'non_existence' as WiseCondition, change: 0, current: 0, slope: 0 };
     const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const currentVal = sorted[sorted.length - 1].value;
-    const prevVal = sorted[sorted.length - 2].value;
+    
+    // Linear Regression Slope
+    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, n = sorted.length;
+    sorted.forEach((v, i) => { sumX += i; sumY += v.value; sumXY += i * v.value; sumXX += i * i; });
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+
+    const startVal = sorted[0].value;
     let change = 0;
-    if (prevVal !== 0) change = (currentVal - prevVal) / Math.abs(prevVal);
+    if (startVal !== 0) change = (currentVal - startVal) / Math.abs(startVal);
     else if (currentVal > 0) change = 1;
     
-    // Condition Logic
-    let condition: WiseCondition = 'normal';
-    if (change > 0.1) condition = 'affluence';
-    else if (change > 0) condition = 'normal';
-    else if (change > -0.1) condition = 'emergency';
-    else condition = 'danger';
-
-    if (inverted) {
-        change = -change;
-        if (condition === 'affluence') condition = 'danger';
-        else if (condition === 'danger') condition = 'affluence';
-        else if (condition === 'normal') condition = 'emergency';
-        else if (condition === 'emergency') condition = 'normal';
-    }
-    
-    return { condition, change, current: currentVal };
+    return { condition: 'normal' as WiseCondition, change, current: currentVal, slope };
 };
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, initialData }) => {
@@ -124,6 +115,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
   const [isDemoStats, setIsDemoStats] = useState(false);
   const [statsPeriod, setStatsPeriod] = useState<string>('3m');
   const [newValueInput, setNewValueInput] = useState<Record<string, string>>({}); // {statId: value}
+  const [newValueInput2, setNewValueInput2] = useState<Record<string, string>>({}); // {statId: value2}
   const [infoStatId, setInfoStatId] = useState<string | null>(null); // For overlay description
 
   useEffect(() => {
@@ -162,7 +154,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
       if (!foundData) {
           const demo = generateDemoPersonalStats();
           setStatsDefinitions(demo.map(d => d.def as StatisticDefinition));
-          // Flatten values
           const allVals: StatisticValue[] = [];
           demo.forEach(d => {
               d.vals.forEach(v => allVals.push({...v, definition_id: d.def.id}));
@@ -194,7 +185,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
       const cutoffString = format(cutoffDate, 'yyyy-MM-dd');
       const filtered = vals.filter(v => v.date >= cutoffString);
       
-      // Ensure we have at least 2 points for a line if possible, even if outside period slightly
       if (filtered.length < 2 && vals.length >= 2) {
           const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
           return sorted.slice(-4); 
@@ -202,10 +192,15 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
       return filtered;
   };
 
-  const handleAddValue = async (statId: string) => {
+  const handleAddValue = async (statId: string, isDouble: boolean) => {
       const valStr = newValueInput[statId];
       if (!valStr) return;
       const val = parseFloat(valStr);
+      let val2 = 0;
+      if (isDouble && newValueInput2[statId]) {
+          val2 = parseFloat(newValueInput2[statId]);
+      }
+
       const date = new Date().toISOString().split('T')[0];
 
       if (isDemoStats || !supabase) {
@@ -213,17 +208,20 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
               id: `local-${Date.now()}`,
               definition_id: statId,
               date: date,
-              value: val
+              value: val,
+              value2: val2
           };
           setStatsValues(prev => [...prev, newVal]);
           setNewValueInput(prev => ({...prev, [statId]: ''}));
+          if(isDouble) setNewValueInput2(prev => ({...prev, [statId]: ''}));
           return;
       }
 
-      const { data, error } = await supabase.from('statistics_values').insert([{ definition_id: statId, value: val, date: date }]).select();
+      const { data, error } = await supabase.from('statistics_values').insert([{ definition_id: statId, value: val, value2: val2, date: date }]).select();
       if (!error && data) {
           setStatsValues(prev => [...prev, data[0]]);
           setNewValueInput(prev => ({...prev, [statId]: ''}));
+          if(isDouble) setNewValueInput2(prev => ({...prev, [statId]: ''}));
       } else {
           alert("Ошибка сохранения");
       }
@@ -241,7 +239,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
           let newDepts;
           if (exists) {
               newDepts = current.filter(d => d !== deptId);
-              // Remove subdepts linked to this dept
               const deptObj = ORGANIZATION_STRUCTURE[deptId];
               const subIdsToRemove = deptObj.departments ? Object.keys(deptObj.departments) : [];
               const newSubs = (prev.subdepartment || []).filter(s => !subIdsToRemove.includes(s));
@@ -262,7 +259,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
       });
   };
 
-  // ... (Emergency, File Upload functions kept same) ...
   const handleEmergencyChange = (index: number, field: keyof EmergencyContact, value: string) => {
     const newContacts = [...formData.emergency_contacts];
     newContacts[index] = { ...newContacts[index], [field]: value };
@@ -342,7 +338,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                 ].map(tab => (
                     <button 
                         key={tab.id}
-                        type="button" // Prevent form submit
+                        type="button" 
                         onClick={() => setActiveTab(tab.id)} 
                         className={`w-full text-left px-4 py-3.5 rounded-xl text-sm font-bold transition-all flex items-center justify-between group ${activeTab === tab.id ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}
                     >
@@ -414,8 +410,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                             </section>
                         </div>
                     )}
-
-                    {/* ... (Docs, Finance, Files Tabs - same structure) ... */}
                     {activeTab === 'contacts' && (<div className="space-y-6 animate-in fade-in slide-in-from-right-4"><h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-purple-500 rounded-full"></div> Контакты & Адреса</h3><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Телефон</label><input name="phone" value={formData.phone} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>WhatsApp</label><input name="whatsapp" value={formData.whatsapp} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Email (Рабочий)</label><input name="email" value={formData.email} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Email (Личный)</label><input name="email2" value={formData.email2} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Telegram</label><input name="telegram" value={formData.telegram} onChange={handleChange} className={inputClass} /></div></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4"><div><label className={labelClass}>Фактический адрес</label><textarea name="actual_address" value={formData.actual_address} onChange={handleChange} className={inputClass + " h-24"} /></div><div><label className={labelClass}>Адрес регистрации</label><textarea name="registration_address" value={formData.registration_address} onChange={handleChange} className={inputClass + " h-24"} /></div></div></div>)}
                     {activeTab === 'docs' && (<div className="space-y-6 animate-in fade-in slide-in-from-right-4"><h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-slate-600 rounded-full"></div> Паспортные Данные</h3><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><label className={labelClass}>ИНН</label><input name="inn" value={formData.inn} onChange={handleChange} className={inputClass + " font-mono text-lg tracking-widest"} placeholder="000000000000" /></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><h4 className="font-bold text-slate-700 mb-4 border-b pb-2">Внутренний Паспорт</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Серия и Номер</label><input name="passport_number" value={formData.passport_number} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Дата Выдачи</label><input type="date" name="passport_date" value={formData.passport_date} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Кем Выдан</label><textarea name="passport_issuer" value={formData.passport_issuer} onChange={handleChange} className={inputClass + " h-16"} /></div></div></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><h4 className="font-bold text-slate-700 mb-4 border-b pb-2">Заграничный Паспорт</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Номер</label><input name="foreign_passport" value={formData.foreign_passport} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Годен до / Дата выдачи</label><input name="foreign_passport_date" value={formData.foreign_passport_date} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Authority (Кем выдан)</label><input name="foreign_passport_issuer" value={formData.foreign_passport_issuer} onChange={handleChange} className={inputClass} /></div></div></div></div>)}
                     {activeTab === 'finance' && (<div className="space-y-6 animate-in fade-in slide-in-from-right-4"><h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-green-500 rounded-full"></div> Финансы</h3><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><div className="space-y-4"><div><label className={labelClass}>Название Банка</label><input name="bank_name" value={formData.bank_name} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Реквизиты</label><textarea name="bank_details" value={formData.bank_details} onChange={handleChange} className={inputClass + " h-24 font-mono text-sm"} /></div></div></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Крипто-сеть</label><input name="crypto_network" value={formData.crypto_network} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Валюта</label><input name="crypto_currency" value={formData.crypto_currency} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Адрес Кошелька</label><input name="crypto_wallet" value={formData.crypto_wallet} onChange={handleChange} className={inputClass + " font-mono text-xs"} /></div></div></div>)}
@@ -428,100 +422,50 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div> Личная Статистика и KPI</h3>
                                 <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
                                     {PERIODS.map(p => (
-                                        <button 
-                                            key={p.id} 
-                                            type="button" 
-                                            onClick={() => setStatsPeriod(p.id)}
-                                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${statsPeriod === p.id ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
-                                        >
-                                            {p.label}
-                                        </button>
+                                        <button key={p.id} type="button" onClick={() => setStatsPeriod(p.id)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${statsPeriod === p.id ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{p.label}</button>
                                     ))}
                                 </div>
                             </div>
-
                             {isDemoStats && (<div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-4 text-xs text-amber-800 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>Показаны демонстрационные данные. Реальные статистики отсутствуют.</div>)}
-                            {statsDefinitions.length === 0 && !isLoadingStats && !isDemoStats && (<div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200"><div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300"><TrendingUp size={32}/></div><p className="text-slate-500 font-bold text-lg">Нет назначенных статистик</p><p className="text-sm text-slate-400 mt-2">Статистики назначаются через Инженерное меню.</p></div>)}
-                            
                             {statsDefinitions.map(stat => {
                                 const vals = getFilteredValues(stat.id);
-                                const totalVals = statsValues.filter(v => v.definition_id === stat.id); // For trend analysis independent of period view
-                                const { condition, change, current } = analyzeTrend(totalVals, stat.inverted);
-                                const isPos = change >= 0;
-                                const isInfoOpen = infoStatId === stat.id;
+                                const { slope, change, current } = analyzeTrend(vals, stat.inverted);
+                                const isSlopeUp = slope > 0;
+                                let isPositiveOutcome = isSlopeUp;
+                                if(stat.inverted) isPositiveOutcome = !isSlopeUp;
 
+                                const trendColorHex = isPositiveOutcome ? "#10b981" : "#f43f5e";
                                 return (
                                     <div key={stat.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow relative">
-                                        
-                                        {/* INFO OVERLAY */}
-                                        {isInfoOpen && (
-                                            <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-20 p-6 animate-in fade-in flex flex-col">
-                                                <div className="flex justify-between items-center mb-4">
-                                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Описание Статистики</span>
-                                                    <button type="button" onClick={() => setInfoStatId(null)} className="p-1 rounded-full hover:bg-slate-100 transition-colors">
-                                                        <X size={18} className="text-slate-400 hover:text-slate-600"/>
-                                                    </button>
-                                                </div>
-                                                <h4 className="font-bold text-lg text-slate-800 mb-2">{stat.title}</h4>
-                                                <p className="text-sm text-slate-700 font-medium leading-relaxed mb-6 whitespace-pre-wrap">{stat.description || "Описание отсутствует."}</p>
-                                                
-                                                <div className="mt-auto pt-4 border-t border-slate-100">
-                                                    <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2 flex items-center gap-1"><HelpCircle size={12}/> Методика расчета</div>
-                                                    <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 font-medium">{stat.calculation_method || "Прямой ввод данных."}</div>
-                                                </div>
-                                            </div>
-                                        )}
-
                                         <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-white">
                                             <div className="flex-1 pr-4">
                                                 <div className="flex items-start gap-2 mb-1">
                                                     <h4 className="font-bold text-lg text-slate-800 leading-tight">{stat.title}</h4>
-                                                    <button 
-                                                        type="button"
-                                                        onClick={() => setInfoStatId(isInfoOpen ? null : stat.id)} 
-                                                        className="text-slate-300 hover:text-blue-600 transition-colors mt-0.5"
-                                                        title="Информация о статистике"
-                                                    >
-                                                        <Info size={16} />
-                                                    </button>
+                                                    <button type="button" onClick={() => setInfoStatId(infoStatId === stat.id ? null : stat.id)} className="text-slate-300 hover:text-blue-600 transition-colors mt-0.5"><Info size={16} /></button>
                                                 </div>
-                                                {stat.inverted && (
-                                                    <div className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mb-1.5">
-                                                        <ArrowDownUp size={10} /> ОБРАТНАЯ
-                                                    </div>
-                                                )}
+                                                {stat.inverted && (<div className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mb-1.5"><ArrowDownUp size={10} /> ОБРАТНАЯ</div>)}
                                                 <p className="text-xs text-slate-500 font-medium line-clamp-2">{stat.description || 'Личный показатель эффективности'}</p>
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-4xl font-black text-slate-900 tracking-tight">{current.toLocaleString()}</div>
-                                                <div className={`text-xs font-bold flex items-center justify-end gap-1 mt-1 px-2 py-0.5 rounded-lg ${isPos ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                                    {isPos ? <TrendingUp size={12}/> : <TrendingDown size={12}/>}
-                                                    {Math.abs(change * 100).toFixed(1)}%
-                                                </div>
+                                                {vals.length > 1 && (
+                                                    <div className={`text-xs font-bold flex items-center justify-end gap-1 mt-1 px-2 py-0.5 rounded-lg ${isPositiveOutcome ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                        {slope >= 0 ? <TrendingUp size={12}/> : <TrendingDown size={12}/>}
+                                                        {Math.abs(change * 100).toFixed(1)}%
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                        
                                         <div className="px-6 pb-2 pt-4 h-64 bg-white relative">
-                                            <StatsChart key={statsPeriod} values={vals} inverted={stat.inverted} color={isPos ? "#10b981" : "#f43f5e"} />
+                                            <StatsChart key={statsPeriod} values={vals} inverted={stat.inverted} color={trendColorHex} isDouble={stat.is_double} />
                                         </div>
-
-                                        {/* QUICK ADD VALUE */}
                                         <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
                                             <div className="flex items-center gap-2 flex-1">
-                                                <input 
-                                                    type="number" 
-                                                    placeholder="0"
-                                                    value={newValueInput[stat.id] || ''}
-                                                    onChange={e => setNewValueInput({...newValueInput, [stat.id]: e.target.value})}
-                                                    className="w-24 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                                                />
-                                                <button 
-                                                    type="button" 
-                                                    onClick={() => handleAddValue(stat.id)}
-                                                    className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 text-slate-600 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
-                                                >
-                                                    <Plus size={14}/> Внести значение
-                                                </button>
+                                                <input type="number" placeholder="0" value={newValueInput[stat.id] || ''} onChange={e => setNewValueInput({...newValueInput, [stat.id]: e.target.value})} className="w-24 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold outline-none" />
+                                                {stat.is_double && (
+                                                    <input type="number" placeholder="Вал 2" value={newValueInput2[stat.id] || ''} onChange={e => setNewValueInput2({...newValueInput2, [stat.id]: e.target.value})} className="w-24 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold outline-none" />
+                                                )}
+                                                <button type="button" onClick={() => handleAddValue(stat.id, stat.is_double || false)} className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 rounded-lg text-xs font-bold flex items-center gap-1"><Plus size={14}/> Внести</button>
                                             </div>
                                             <div className="text-[10px] text-slate-400 font-medium">Последнее: {vals.length > 0 ? format(new Date(vals[vals.length-1].date), 'dd.MM.yyyy') : 'Нет данных'}</div>
                                         </div>

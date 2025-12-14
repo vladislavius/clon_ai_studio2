@@ -111,6 +111,7 @@ export interface StatisticValue {
   definition_id: string;
   date: string; // YYYY-MM-DD
   value: number;
+  value2?: number; // Second value for double stats
   condition?: WiseCondition;
   notes?: string;
 }

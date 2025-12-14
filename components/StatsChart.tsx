@@ -35,16 +35,11 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
   const PADDING_Y = 30;
 
   // --- DATA PREPARATION ---
-  const secondaryValues = useMemo(() => {
-      if (!isDouble) return [];
-      return sortedValues.map(v => ({
-          ...v,
-          value: Math.max(0, v.value * (0.5 + Math.sin(new Date(v.date).getTime()) * 0.2)) 
-      }));
-  }, [sortedValues, isDouble]);
-
+  // If isDouble, we use the real value2 from the data object.
+  // If value2 is missing, default to 0 to avoid breaking chart, but ideally should be present.
+  
   const allValues = isDouble 
-      ? [...sortedValues.map(v => v.value), ...secondaryValues.map(v => v.value)]
+      ? [...sortedValues.map(v => v.value), ...sortedValues.map(v => v.value2 || 0)]
       : sortedValues.map(v => v.value);
 
   const minVal = Math.min(...allValues);
@@ -99,18 +94,21 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
   const trendLine = calculateTrendLine(sortedValues);
 
   // --- PATH GENERATION ---
-  const generatePath = (data: typeof sortedValues) => {
-      return data.map((v, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)},${getY(v.value)}`).join(' ');
+  const generatePath = (data: typeof sortedValues, valueKey: 'value' | 'value2') => {
+      return data.map((v, i) => {
+          const val = valueKey === 'value' ? v.value : (v.value2 || 0);
+          return `${i === 0 ? 'M' : 'L'} ${getX(i)},${getY(val)}`
+      }).join(' ');
   };
 
   const generateAreaPath = (data: typeof sortedValues) => {
-      const line = generatePath(data);
+      const line = generatePath(data, 'value');
       return `${line} L ${getX(data.length - 1)},${SVG_HEIGHT - PADDING_Y} L ${getX(0)},${SVG_HEIGHT - PADDING_Y} Z`;
   };
 
-  const primaryPath = generatePath(sortedValues);
+  const primaryPath = generatePath(sortedValues, 'value');
   const primaryArea = generateAreaPath(sortedValues);
-  const secondaryPath = isDouble ? generatePath(secondaryValues) : '';
+  const secondaryPath = isDouble ? generatePath(sortedValues, 'value2') : '';
 
   const mainColor = isDouble ? "#10b981" : color;
   const secondColor = "#ef4444"; 
@@ -141,13 +139,13 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
                     {format(new Date(sortedValues[hoveredIndex].date), 'd MMM yyyy')}
                 </div>
                 <div className="flex justify-between gap-3 items-center">
-                    <span className="opacity-70 font-medium">Значение:</span>
+                    <span className="opacity-70 font-medium">{isDouble ? 'Вал 1:' : 'Значение:'}</span>
                     <span className="font-mono font-bold text-lg" style={{color: mainColor}}>{sortedValues[hoveredIndex].value.toLocaleString()}</span>
                 </div>
                 {isDouble && (
                     <div className="flex justify-between gap-3 items-center">
-                        <span className="opacity-70 font-medium">Вторая:</span>
-                        <span className="font-mono font-bold text-rose-400">{Math.round(secondaryValues[hoveredIndex].value).toLocaleString()}</span>
+                        <span className="opacity-70 font-medium">Вал 2:</span>
+                        <span className="font-mono font-bold text-rose-400">{(sortedValues[hoveredIndex].value2 || 0).toLocaleString()}</span>
                     </div>
                 )}
             </div>
@@ -196,7 +194,8 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
             )}
 
             {/* --- AREAS & LINES --- */}
-            <path d={primaryArea} fill={`url(#grad-main-${mainColor})`} />
+            {/* We only fill area for primary line to keep it clean */}
+            {!isDouble && <path d={primaryArea} fill={`url(#grad-main-${mainColor})`} />}
             
             <path 
                 d={primaryPath} 
@@ -238,11 +237,11 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
                 />
             ))}
 
-            {isDouble && secondaryValues.map((v, i) => (
+            {isDouble && sortedValues.map((v, i) => (
                 <circle
                     key={`sec-dot-${i}`}
                     cx={getX(i)}
-                    cy={getY(v.value)}
+                    cy={getY(v.value2 || 0)}
                     r="3"
                     fill="white"
                     stroke={secondColor}
