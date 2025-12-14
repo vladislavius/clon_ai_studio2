@@ -320,10 +320,16 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       return (
           <div 
             key={stat.id} 
-            className={`relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[220px] transition-all group ${isEditMode ? 'ring-2 ring-blue-400 ring-offset-2 hover:-translate-y-0' : 'hover:-translate-y-1 hover:shadow-md'}`}
+            className={`relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[260px] transition-all group ${isEditMode ? 'ring-2 ring-blue-400 ring-offset-2 hover:-translate-y-0' : 'hover:-translate-y-1 hover:shadow-md'}`}
           >
               <div className="absolute top-0 left-0 bottom-0 w-1" style={{backgroundColor: deptColor}}></div>
               
+              {/* SOFT GRADIENT BACKGROUND FOR TOP SECTION */}
+              <div 
+                  className="absolute top-0 left-1 right-0 h-32 pointer-events-none" 
+                  style={{ background: `linear-gradient(to bottom, ${deptColor}15, #ffffff00)` }} 
+              ></div>
+
               {/* EDIT MODE OVERLAY (ADMIN ONLY) */}
               {isEditMode && isAdmin && (
                   <div className="absolute top-2 right-2 flex gap-1 z-30 bg-white/90 p-1 rounded-lg border border-slate-100 shadow-sm backdrop-blur-sm animate-in fade-in">
@@ -332,7 +338,7 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                   </div>
               )}
 
-              <div className="p-3 pl-4 flex flex-col h-full relative">
+              <div className="p-3 pl-4 flex flex-col h-full relative z-10">
                   <div className="flex justify-between items-start mb-2">
                       <div className="flex-1 pr-6">
                            <div className="flex items-center gap-1.5">
@@ -399,10 +405,11 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                                <h2 className="text-sm font-bold flex items-center gap-2 text-slate-700">{dept.name}</h2>
                                <span className="text-slate-400 text-xs font-medium">{dept.manager}</span>
                            </div>
-                           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                           {/* UNIFIED GRID SIZE: Matches department view (max 4 cols) instead of 5 */}
+                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                {allDeptStats.map(stat => renderStatCard(stat, dept.color))}
                                {isEditMode && isAdmin && (
-                                   <div onClick={() => openNewStatModal(deptId)} className="border-2 border-dashed border-slate-300 rounded-xl h-[220px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
+                                   <div onClick={() => openNewStatModal(deptId)} className="border-2 border-dashed border-slate-300 rounded-xl h-[260px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
                                        <Plus size={32} />
                                        <span className="text-xs font-bold mt-2">Добавить статистику</span>
                                    </div>
@@ -423,10 +430,10 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                            {(deptStats.length > 0 || isEditMode) && (
                                <div className="space-y-3">
                                    <div className="flex items-center gap-2 text-slate-400 font-bold uppercase text-xs tracking-widest px-1"><Layers size={14}/> Общие статистики</div>
-                                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                        {deptStats.map(stat => renderStatCard(stat, dept.color))}
                                        {isEditMode && isAdmin && (
-                                           <div onClick={() => openNewStatModal(deptId)} className="border-2 border-dashed border-slate-300 rounded-xl h-[220px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
+                                           <div onClick={() => openNewStatModal(deptId)} className="border-2 border-dashed border-slate-300 rounded-xl h-[260px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
                                                <Plus size={32} />
                                                <span className="text-xs font-bold mt-2">Добавить</span>
                                            </div>
@@ -441,10 +448,10 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                                return (
                                    <div key={sub.id} className="space-y-3 pt-4 border-t border-slate-200/50">
                                        <div className="flex items-center gap-3"><span className="px-2 py-0.5 rounded text-white font-bold text-xs" style={{backgroundColor: dept.color}}>DIV {sub.code}</span><h3 className="text-base font-bold text-slate-700">{sub.name}</h3></div>
-                                       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                            {subStats.map(stat => renderStatCard(stat, dept.color))}
                                            {isEditMode && isAdmin && (
-                                               <div onClick={() => openNewStatModal(sub.id)} className="border-2 border-dashed border-slate-300 rounded-xl h-[220px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
+                                               <div onClick={() => openNewStatModal(sub.id)} className="border-2 border-dashed border-slate-300 rounded-xl h-[260px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
                                                    <Plus size={32} />
                                                    <span className="text-xs font-bold mt-2">Добавить</span>
                                                </div>
