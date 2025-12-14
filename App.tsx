@@ -87,7 +87,7 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
-  const isAdmin = isOffline || session?.user?.email === 'admin@hrsystem.com';
+  const isAdmin = isOffline || session?.user?.email === 'hrtisland@gmail.com';
 
   useEffect(() => {
     if (isOffline) {
@@ -116,7 +116,7 @@ function App() {
 
   const handleBypassAuth = () => {
       setIsOffline(true);
-      setSession({ user: { email: 'admin@hrsystem.com' } });
+      setSession({ user: { email: 'hrtisland@gmail.com' } });
       setEmployees(DEMO_EMPLOYEES);
       setAuthChecking(false);
   };
