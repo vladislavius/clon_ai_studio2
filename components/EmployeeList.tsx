@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Employee as EmployeeType } from '../types';
 import { ORGANIZATION_STRUCTURE } from '../constants';
@@ -28,89 +29,92 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
     return dept.departments[subDeptId]?.name || '';
   };
 
-  const formatFileSize = (bytes: number) => {
-      if (bytes === 0) return '0 B';
-      const k = 1024;
-      const sizes = ['B', 'KB', 'MB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
-
-  // Helper for full export from list (same as Modal)
+  // --- FULL TXT EXPORT LOGIC ---
   const quickExportTxt = (e: React.MouseEvent, emp: EmployeeType) => {
     e.stopPropagation();
+    
+    // Helper to align keys
+    const pad = (key: string) => key.padEnd(25, ' ');
+    const val = (v: string | undefined | null) => v ? v : '-';
+
+    const deptName = emp.department?.map(d => ORGANIZATION_STRUCTURE[d]?.name).join(', ') || '-';
+    const subDeptName = emp.subdepartment?.map(s => {
+         const deptId = emp.department?.[0];
+         return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s;
+    }).join(', ') || '-';
+
     const lines = [
-        "========================================",
-        "          FULL EMPLOYEE DOSSIER         ",
-        "========================================",
+        "================================================================",
+        "                   ЛИЧНОЕ ДЕЛО СОТРУДНИКА                       ",
+        "================================================================",
+        `Дата формирования: ${new Date().toLocaleString('ru-RU')}`,
         "",
-        "[1] PERSONAL INFORMATION",
-        `Full Name:          ${emp.full_name}`,
-        `Position:           ${emp.position}`,
-        `System ID:          ${emp.id}`,
-        `Nickname (NIK):     ${emp.nickname || 'N/A'}`,
-        `Birth Date:         ${emp.birth_date || '-'}`,
-        `Join Date:          ${emp.join_date || '-'}`,
+        "[ 1. ОСНОВНАЯ ИНФОРМАЦИЯ ]",
+        `${pad('ФИО:')}${val(emp.full_name)}`,
+        `${pad('Должность:')}${val(emp.position)}`,
+        `${pad('Системный ID:')}${val(emp.id)}`,
+        `${pad('Никнейм (NIK):')}${val(emp.nickname)}`,
+        `${pad('Дата рождения:')}${val(emp.birth_date)}`,
+        `${pad('Дата приема:')}${val(emp.join_date)}`,
         "",
-        "[2] CONTACTS",
-        `Phone:              ${emp.phone || '-'}`,
-        `WhatsApp:           ${emp.whatsapp || '-'}`,
-        `Telegram:           ${emp.telegram || '-'}`,
-        `Work Email:         ${emp.email || '-'}`,
-        `Personal Email:     ${emp.email2 || '-'}`,
+        "[ 2. ОРГАНИЗАЦИОННАЯ СТРУКТУРА ]",
+        `${pad('Департамент:')}${deptName}`,
+        `${pad('Отдел/Секция:')}${subDeptName}`,
         "",
-        "[3] ORGANIZATION",
-        `Department:         ${emp.department?.map(d => ORGANIZATION_STRUCTURE[d]?.name).join(', ') || '-'}`,
-        `Sub-Department:     ${emp.subdepartment?.map(s => {
-             const deptId = emp.department?.[0];
-             return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s;
-        }).join(', ') || '-'}`,
+        "[ 3. КОНТАКТЫ ]",
+        `${pad('Телефон:')}${val(emp.phone)}`,
+        `${pad('WhatsApp:')}${val(emp.whatsapp)}`,
+        `${pad('Telegram:')}${val(emp.telegram)}`,
+        `${pad('Email (Рабочий):')}${val(emp.email)}`,
+        `${pad('Email (Личный):')}${val(emp.email2)}`,
         "",
-        "[4] ADDRESSES",
-        `Actual Address:     ${emp.actual_address || '-'}`,
-        `Registration Addr:  ${emp.registration_address || '-'}`,
+        "[ 4. АДРЕСА ]",
+        `${pad('Фактический адрес:')}${val(emp.actual_address)}`,
+        `${pad('Адрес регистрации:')}${val(emp.registration_address)}`,
         "",
-        "[5] DOCUMENTS",
-        `INN:                ${emp.inn || '-'}`,
-        `-- Domestic Passport --`,
-        `Number:             ${emp.passport_number || '-'}`,
-        `Issued Date:        ${emp.passport_date || '-'}`,
-        `Issued By:          ${emp.passport_issuer || '-'}`,
-        `-- Foreign Passport --`,
-        `Number:             ${emp.foreign_passport || '-'}`,
-        `Issued Date:        ${emp.foreign_passport_date || '-'}`,
-        `Issued By:          ${emp.foreign_passport_issuer || '-'}`,
+        "[ 5. ДОКУМЕНТЫ И ЛЕГАЛЬНОСТЬ ]",
+        `${pad('ИНН:')}${val(emp.inn)}`,
+        `--- Внутренний паспорт ---`,
+        `${pad('Номер:')}${val(emp.passport_number)}`,
+        `${pad('Дата выдачи:')}${val(emp.passport_date)}`,
+        `${pad('Кем выдан:')}${val(emp.passport_issuer)}`,
+        `--- Заграничный паспорт ---`,
+        `${pad('Номер:')}${val(emp.foreign_passport)}`,
+        `${pad('Срок действия:')}${val(emp.foreign_passport_date)}`,
+        `${pad('Кем выдан:')}${val(emp.foreign_passport_issuer)}`,
         "",
-        "[6] FINANCE",
-        `Bank Name:          ${emp.bank_name || '-'}`,
-        `Account Details:    ${emp.bank_details || '-'}`,
-        `Crypto Wallet:      ${emp.crypto_wallet || '-'}`,
-        `Crypto Network:     ${emp.crypto_network || '-'}`,
-        `Crypto Currency:    ${emp.crypto_currency || '-'}`,
+        "[ 6. ФИНАНСЫ ]",
+        `${pad('Банк:')}${val(emp.bank_name)}`,
+        `${pad('Реквизиты/Карта:')}${val(emp.bank_details)}`,
+        `${pad('Крипто-кошелек:')}${val(emp.crypto_wallet)}`,
+        `${pad('Сеть:')}${val(emp.crypto_network)}`,
+        `${pad('Валюта:')}${val(emp.crypto_currency)}`,
         "",
-        "[7] EMERGENCY CONTACTS",
-        ...(emp.emergency_contacts.length ? emp.emergency_contacts.map((c, i) => 
-            `${i+1}. ${c.name} (${c.relation}) | Phone: ${c.phone} | TG: ${c.telegram || '-'}`
-        ) : ['No emergency contacts recorded.']),
+        "[ 7. ЭКСТРЕННЫЕ КОНТАКТЫ ]",
+        ...(emp.emergency_contacts && emp.emergency_contacts.length > 0 
+            ? emp.emergency_contacts.map((c, i) => 
+                `${i+1}. ${c.name} (${c.relation}) -> Тел: ${c.phone} ${c.telegram ? '| Tg: '+c.telegram : ''}`
+              )
+            : ["Контакты не указаны"]),
         "",
-        "[8] ATTACHED FILES",
-        ...(emp.attachments?.length ? emp.attachments.map((f, i) => 
-            `${i+1}. ${f.file_name} (${f.file_type}) - ${f.public_url}`
-        ) : ['No files attached.']),
+        "[ 8. ДОПОЛНИТЕЛЬНО ]",
+        `${pad('Заметки:')}${val(emp.additional_info)}`,
         "",
-        "[9] ADDITIONAL NOTES",
-        `${emp.additional_info || 'None'}`,
+        "[ 9. КАСТОМНЫЕ ПОЛЯ ]",
+        ...(emp.custom_fields && emp.custom_fields.length > 0
+            ? emp.custom_fields.map(f => `${pad(f.label + ':')}${f.value}`)
+            : ["Нет дополнительных полей"]),
         "",
-        "========================================",
-        `Report Generated: ${new Date().toLocaleString()}`,
-        "========================================",
+        "================================================================",
+        "                  КОНЕЦ ФАЙЛА                                   ",
+        "================================================================"
     ];
     
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${emp.full_name.replace(/\s+/g, '_')}_full_dossier.txt`;
+    a.download = `${emp.full_name.replace(/\s+/g, '_')}_dossier.txt`;
     a.click();
   };
 
@@ -143,199 +147,40 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                 display: flex;
                 flex-direction: column;
             }
-
-            /* --- HEADER --- */
-            .header {
-                display: flex;
-                gap: 25px;
-                margin-bottom: 40px;
-                align-items: flex-start;
-            }
-            .photo {
-                width: 120px;
-                height: 120px;
-                border-radius: 20px;
-                object-fit: cover;
-                background: #f1f5f9;
-            }
-            .header-info h1 {
-                font-size: 26px;
-                font-weight: 900;
-                text-transform: uppercase;
-                margin: 0 0 5px 0;
-                color: #0f172a;
-                line-height: 1.1;
-            }
-            .header-info h2 {
-                font-size: 14px;
-                font-weight: 700;
-                color: #3b82f6; /* Blue Title */
-                text-transform: uppercase;
-                margin: 0 0 15px 0;
-            }
-            .badges {
-                display: flex;
-                gap: 8px;
-            }
-            .badge {
-                background: #f1f5f9;
-                color: #334155;
-                padding: 6px 10px;
-                border-radius: 6px;
-                font-size: 11px;
-                font-weight: 600;
-            }
-            .badge.blue {
-                background: #eff6ff;
-                color: #1d4ed8;
-            }
-
-            /* --- LAYOUT --- */
-            .container {
-                display: grid;
-                grid-template-columns: 240px 1fr;
-                gap: 40px;
-            }
-            
-            .sidebar {
-                border-right: 1px solid #e2e8f0;
-                padding-right: 20px;
-            }
-            
-            .section {
-                margin-bottom: 30px;
-            }
-            
-            .section-title {
-                font-size: 11px;
-                font-weight: 800;
-                color: #94a3b8; /* Light Grey Title */
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                margin-bottom: 12px;
-                border-bottom: 1px solid #f1f5f9;
-                padding-bottom: 4px;
-            }
-
-            /* --- LEFT COLUMN STYLES --- */
-            .contact-item {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                margin-bottom: 12px;
-                font-size: 13px;
-                color: #334155;
-                font-weight: 500;
-            }
-            .contact-icon {
-                width: 24px;
-                height: 24px;
-                background: #f1f5f9; /* Light square */
-                border-radius: 4px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 10px;
-                font-weight: 700;
-                color: #64748b;
-            }
-
-            .address-box {
-                background: #f8fafc; /* Very light grey bg */
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                padding: 12px;
-                margin-bottom: 10px;
-            }
-            .address-label {
-                font-size: 10px;
-                font-weight: 700;
-                color: #64748b;
-                text-transform: uppercase;
-                margin-bottom: 4px;
-            }
-            .address-val {
-                font-size: 12px;
-                color: #334155;
-                line-height: 1.4;
-            }
-
-            .emergency-card {
-                background: #fff1f2; /* Pinkish bg */
-                border-left: 3px solid #fecaca;
-                padding: 10px;
-                border-radius: 0 6px 6px 0;
-                margin-bottom: 8px;
-            }
+            /* ... (Styles kept same as previous for brevity, purely visual print layout) ... */
+            .header { display: flex; gap: 25px; margin-bottom: 40px; align-items: flex-start; }
+            .photo { width: 120px; height: 120px; border-radius: 20px; object-fit: cover; background: #f1f5f9; }
+            .header-info h1 { font-size: 26px; font-weight: 900; text-transform: uppercase; margin: 0 0 5px 0; color: #0f172a; line-height: 1.1; }
+            .header-info h2 { font-size: 14px; font-weight: 700; color: #3b82f6; text-transform: uppercase; margin: 0 0 15px 0; }
+            .badges { display: flex; gap: 8px; }
+            .badge { background: #f1f5f9; color: #334155; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+            .badge.blue { background: #eff6ff; color: #1d4ed8; }
+            .container { display: grid; grid-template-columns: 240px 1fr; gap: 40px; }
+            .sidebar { border-right: 1px solid #e2e8f0; padding-right: 20px; }
+            .section { margin-bottom: 30px; }
+            .section-title { font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; }
+            .contact-item { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 13px; color: #334155; font-weight: 500; }
+            .contact-icon { width: 24px; height: 24px; background: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #64748b; }
+            .address-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+            .address-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+            .address-val { font-size: 12px; color: #334155; line-height: 1.4; }
+            .emergency-card { background: #fff1f2; border-left: 3px solid #fecaca; padding: 10px; border-radius: 0 6px 6px 0; margin-bottom: 8px; }
             .ec-name { color: #be123c; font-weight: 700; font-size: 12px; }
             .ec-role { color: #e11d48; font-size: 10px; margin-bottom: 2px; }
             .ec-phone { color: #be123c; font-size: 12px; font-weight: 500; }
-
-            /* --- RIGHT COLUMN STYLES --- */
-            .grid-2 {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                column-gap: 20px;
-                row-gap: 15px;
-            }
-            
-            .field-group {
-                margin-bottom: 5px;
-            }
-            .label {
-                font-size: 10px;
-                font-weight: 700;
-                color: #64748b; /* Grey Label */
-                text-transform: uppercase;
-                margin-bottom: 4px;
-                display: block;
-            }
-            .value {
-                font-size: 13px;
-                font-weight: 600;
-                color: #0f172a; /* Dark Value */
-                line-height: 1.3;
-            }
-            .mono-bg {
-                font-family: monospace;
-                background: #f1f5f9;
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-
-            .passport-box {
-                border: 1px solid #e2e8f0;
-                border-radius: 10px;
-                padding: 15px;
-                background: #fff;
-            }
-
-            .finance-row {
-                display: flex;
-                justify-content: space-between;
-                padding: 8px 0;
-                border-bottom: 1px solid #f8fafc;
-                font-size: 12px;
-            }
+            .grid-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 15px; }
+            .label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; display: block; }
+            .value { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.3; }
+            .mono-bg { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+            .passport-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; background: #fff; }
+            .finance-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f8fafc; font-size: 12px; }
             .finance-label { color: #64748b; font-weight: 600; }
             .finance-val { color: #0f172a; font-weight: 600; text-align: right; }
-            
-            .footer {
-                margin-top: auto;
-                text-align: right;
-                font-size: 9px;
-                color: #94a3b8;
-                padding-top: 20px;
-                border-top: 1px solid #f1f5f9;
-            }
-
+            .footer { margin-top: auto; text-align: right; font-size: 9px; color: #94a3b8; padding-top: 20px; border-top: 1px solid #f1f5f9; }
           </style>
         </head>
         <body>
           <div class="page">
-             
-             <!-- HEADER -->
              <div class="header">
                  <img src="${emp.photo_url || 'https://via.placeholder.com/150'}" class="photo" />
                  <div class="header-info">
@@ -348,12 +193,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                      </div>
                  </div>
              </div>
-
              <div class="container">
-                
-                <!-- LEFT SIDEBAR -->
                 <div class="sidebar">
-                    
                     <div class="section">
                         <div class="section-title">CONTACTS</div>
                         ${emp.phone ? `<div class="contact-item"><div class="contact-icon">Ph</div>${emp.phone}</div>` : ''}
@@ -361,7 +202,6 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                         ${emp.telegram ? `<div class="contact-item"><div class="contact-icon">Tg</div>${emp.telegram}</div>` : ''}
                         ${emp.whatsapp ? `<div class="contact-item"><div class="contact-icon">Wa</div>${emp.whatsapp}</div>` : ''}
                     </div>
-
                     <div class="section">
                         <div class="section-title">RESIDENCE</div>
                         <div class="address-box">
@@ -373,129 +213,49 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                             <div class="address-val">${emp.registration_address || '-'}</div>
                         </div>
                     </div>
-
                     <div class="section">
                         <div class="section-title">EMERGENCY</div>
                          ${emp.emergency_contacts && emp.emergency_contacts.length > 0 ? 
-                            emp.emergency_contacts.map(c => `
-                                <div class="emergency-card">
-                                    <div class="ec-name">${c.name}</div>
-                                    <div class="ec-role">${c.relation}</div>
-                                    <div class="ec-phone">${c.phone}</div>
-                                </div>
-                            `).join('') : '<div style="font-size:11px; color:#94a3b8">Нет контактов</div>'}
+                            emp.emergency_contacts.map(c => `<div class="emergency-card"><div class="ec-name">${c.name}</div><div class="ec-role">${c.relation}</div><div class="ec-phone">${c.phone}</div></div>`).join('') : '<div style="font-size:11px; color:#94a3b8">Нет контактов</div>'}
                     </div>
-
                 </div>
-
-                <!-- RIGHT MAIN -->
                 <div class="main">
-                    
                     <div class="section">
                         <div class="section-title">ORGANIZATION & IDENTITY</div>
                         <div class="grid-2">
-                            <div>
-                                <span class="label">DEPARTMENT</span>
-                                <div class="value">${emp.department?.map(d => ORGANIZATION_STRUCTURE[d]?.name.split('.')[1] || '').join(', ') || '-'}</div>
-                            </div>
-                            <div>
-                                <span class="label">SUB-DEPARTMENT</span>
-                                <div class="value">${emp.subdepartment?.map(s => {
-                                     const deptId = emp.department?.[0];
-                                     return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s;
-                                }).join(', ') || '-'}</div>
-                            </div>
-                            <div style="margin-top: 10px;">
-                                <span class="label">BIRTH DATE</span>
-                                <div class="value">${emp.birth_date || '-'}</div>
-                            </div>
-                             <div style="margin-top: 10px;">
-                                <span class="label">INN</span>
-                                <div class="value"><span class="mono-bg">${emp.inn || '-'}</span></div>
-                            </div>
+                            <div><span class="label">DEPARTMENT</span><div class="value">${emp.department?.map(d => ORGANIZATION_STRUCTURE[d]?.name.split('.')[1] || '').join(', ') || '-'}</div></div>
+                            <div><span class="label">SUB-DEPARTMENT</span><div class="value">${emp.subdepartment?.map(s => { const deptId = emp.department?.[0]; return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s; }).join(', ') || '-'}</div></div>
+                            <div style="margin-top: 10px;"><span class="label">BIRTH DATE</span><div class="value">${emp.birth_date || '-'}</div></div>
+                             <div style="margin-top: 10px;"><span class="label">INN</span><div class="value"><span class="mono-bg">${emp.inn || '-'}</span></div></div>
                         </div>
                     </div>
-
                     <div class="section">
                         <div class="section-title">PASSPORT DETAILS</div>
                         <div class="passport-box">
                              <div class="grid-2">
-                                <div>
-                                    <span class="label">SERIES & NUMBER</span>
-                                    <div class="value"><span class="mono-bg">${emp.passport_number || '-'}</span></div>
-                                </div>
-                                <div>
-                                    <span class="label">DATE OF ISSUE</span>
-                                    <div class="value">${emp.passport_date || '-'}</div>
-                                </div>
+                                <div><span class="label">SERIES & NUMBER</span><div class="value"><span class="mono-bg">${emp.passport_number || '-'}</span></div></div>
+                                <div><span class="label">DATE OF ISSUE</span><div class="value">${emp.passport_date || '-'}</div></div>
                             </div>
-                            <div style="margin-top: 15px;">
-                                <span class="label">ISSUED BY</span>
-                                <div class="value">${emp.passport_issuer || '-'}</div>
-                            </div>
+                            <div style="margin-top: 15px;"><span class="label">ISSUED BY</span><div class="value">${emp.passport_issuer || '-'}</div></div>
                         </div>
                     </div>
-
-                    ${emp.foreign_passport ? `
-                    <div class="section">
-                        <div class="section-title">FOREIGN PASSPORT</div>
-                        <div class="passport-box">
-                             <div class="grid-2">
-                                <div>
-                                    <span class="label">NUMBER</span>
-                                    <div class="value"><span class="mono-bg">${emp.foreign_passport}</span></div>
-                                </div>
-                                <div>
-                                    <span class="label">VALID UNTIL / ISSUED</span>
-                                    <div class="value">${emp.foreign_passport_date || '-'}</div>
-                                </div>
-                            </div>
-                             <div style="margin-top: 15px;">
-                                <span class="label">AUTHORITY</span>
-                                <div class="value">${emp.foreign_passport_issuer || '-'}</div>
-                            </div>
-                        </div>
-                    </div>
-                    ` : ''}
-
+                    ${emp.foreign_passport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${emp.foreign_passport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${emp.foreign_passport_date || '-'}</div></div></div><div style="margin-top: 15px;"><span class="label">AUTHORITY</span><div class="value">${emp.foreign_passport_issuer || '-'}</div></div></div></div>` : ''}
                     <div class="section">
                         <div class="section-title">FINANCE</div>
-                        <div class="finance-row">
-                            <span class="finance-label">Bank Name</span>
-                            <span class="finance-val">${emp.bank_name || 'Не указан'}</span>
-                        </div>
-                        <div class="finance-row">
-                            <span class="finance-label">Account / Card</span>
-                            <span class="finance-val">${emp.bank_details || '-'}</span>
-                        </div>
-                         <div class="finance-row">
-                            <span class="finance-label">Crypto Wallet (${emp.crypto_network || 'NET'})</span>
-                            <span class="finance-val">${emp.crypto_wallet || '-'}</span>
-                        </div>
+                        <div class="finance-row"><span class="finance-label">Bank Name</span><span class="finance-val">${emp.bank_name || 'Не указан'}</span></div>
+                        <div class="finance-row"><span class="finance-label">Account / Card</span><span class="finance-val">${emp.bank_details || '-'}</span></div>
+                         <div class="finance-row"><span class="finance-label">Crypto Wallet (${emp.crypto_network || 'NET'})</span><span class="finance-val">${emp.crypto_wallet || '-'}</span></div>
                     </div>
-
                 </div>
-
              </div>
-
-             <div class="footer">
-                CONFIDENTIAL PERSONNEL RECORD • Generated on ${format(new Date(), 'dd.MM.yyyy')}
-             </div>
-
+             <div class="footer">CONFIDENTIAL PERSONNEL RECORD • Generated on ${format(new Date(), 'dd.MM.yyyy')}</div>
           </div>
-          <script>
-            window.onload = () => { setTimeout(() => window.print(), 500); };
-          </script>
+          <script>window.onload = () => { setTimeout(() => window.print(), 500); };</script>
         </body>
       </html>
     `;
     const printWindow = window.open('', '_blank');
-    if (printWindow) {
-        printWindow.document.write(printContent);
-        printWindow.document.close();
-    } else {
-        alert("Pop-up blocked. Please allow pop-ups for this site to print.");
-    }
+    if (printWindow) { printWindow.document.write(printContent); printWindow.document.close(); }
   };
 
   if (employees.length === 0) {

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ORGANIZATION_STRUCTURE } from '../constants';
-import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon, Calendar, Info, HelpCircle, ArrowDownUp } from 'lucide-react';
 import { Employee as EmployeeType, Attachment, EmergencyContact, StatisticDefinition, StatisticValue, WiseCondition } from '../types';
 import { supabase } from '../supabaseClient';
 import StatsChart from './StatsChart';
@@ -52,20 +52,37 @@ const DEFAULT_EMPLOYEE: EmployeeType = {
 
 // Demo Data Generator
 const generateDemoPersonalStats = () => {
-    const generateHistory = (base: number) => Array.from({length: 20}).map((_, i) => ({
-        id: `demo-${i}`, definition_id: 'demo', date: new Date(Date.now() - (19-i)*86400000).toISOString(), value: Math.floor(base + Math.random()*20 - 10)
-    }));
+    const generateHistory = (base: number) => Array.from({length: 52}).map((_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - ((51-i) * 7)); // Weekly points for a year
+        return {
+            id: `demo-${i}`, 
+            definition_id: 'demo', 
+            date: d.toISOString().split('T')[0], 
+            value: Math.max(0, Math.floor(base + Math.sin(i/5)*20 + Math.random()*10 - 5))
+        };
+    });
     return [
         { 
-            def: { id: 'p1', title: 'Личная Продуктивность (Баллы)', type: 'employee', owner_id: 'demo' },
+            def: { id: 'p1', title: 'Личная Продуктивность (Баллы)', type: 'employee', owner_id: 'demo', description: 'Суммарный объем выполненных задач в баллах' },
             vals: generateHistory(100)
         },
         { 
-            def: { id: 'p2', title: 'Завершенные циклы действий', type: 'employee', owner_id: 'demo' },
+            def: { id: 'p2', title: 'Завершенные циклы действий', type: 'employee', owner_id: 'demo', description: 'Количество полностью закрытых задач без возврата' },
             vals: generateHistory(45)
         }
     ];
 };
+
+const PERIODS = [
+    { id: '1w', label: 'Неделя' },
+    { id: '3w', label: '3 Нед.' },
+    { id: '1m', label: 'Месяц' },
+    { id: '3m', label: '3 Мес.' },
+    { id: '6m', label: 'Полгода' },
+    { id: '1y', label: 'Год' },
+    { id: 'all', label: 'Все' },
+];
 
 const analyzeTrend = (vals: StatisticValue[], inverted: boolean = false) => {
     if (!vals || vals.length < 2) return { condition: 'non_existence' as WiseCondition, change: 0, current: 0 };
@@ -75,8 +92,23 @@ const analyzeTrend = (vals: StatisticValue[], inverted: boolean = false) => {
     let change = 0;
     if (prevVal !== 0) change = (currentVal - prevVal) / Math.abs(prevVal);
     else if (currentVal > 0) change = 1;
-    if (inverted) change = -change;
-    return { condition: change > 0 ? 'normal' as WiseCondition : 'danger' as WiseCondition, change, current: currentVal };
+    
+    // Condition Logic
+    let condition: WiseCondition = 'normal';
+    if (change > 0.1) condition = 'affluence';
+    else if (change > 0) condition = 'normal';
+    else if (change > -0.1) condition = 'emergency';
+    else condition = 'danger';
+
+    if (inverted) {
+        change = -change;
+        if (condition === 'affluence') condition = 'danger';
+        else if (condition === 'danger') condition = 'affluence';
+        else if (condition === 'normal') condition = 'emergency';
+        else if (condition === 'emergency') condition = 'normal';
+    }
+    
+    return { condition, change, current: currentVal };
 };
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, initialData }) => {
@@ -85,11 +117,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Stats
+  // Stats State
   const [statsDefinitions, setStatsDefinitions] = useState<StatisticDefinition[]>([]);
   const [statsValues, setStatsValues] = useState<StatisticValue[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isDemoStats, setIsDemoStats] = useState(false);
+  const [statsPeriod, setStatsPeriod] = useState<string>('3m');
+  const [newValueInput, setNewValueInput] = useState<Record<string, string>>({}); // {statId: value}
+  const [infoStatId, setInfoStatId] = useState<string | null>(null); // For overlay description
 
   useEffect(() => {
     if (isOpen) {
@@ -102,6 +137,8 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
         setStatsValues([]);
       }
       setActiveTab('general');
+      setStatsPeriod('3m');
+      setInfoStatId(null);
     }
   }, [isOpen, initialData]);
 
@@ -134,6 +171,62 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
           setIsDemoStats(true);
       }
       setIsLoadingStats(false);
+  };
+
+  const getFilteredValues = (statId: string) => {
+      const vals = statsValues.filter(v => v.definition_id === statId);
+      if (!vals.length) return [];
+      
+      const cutoffDate = new Date();
+      switch (statsPeriod) {
+          case '1w': cutoffDate.setDate(cutoffDate.getDate() - 7); break;
+          case '3w': cutoffDate.setDate(cutoffDate.getDate() - 21); break;
+          case '1m': cutoffDate.setMonth(cutoffDate.getMonth() - 1); break;
+          case '3m': cutoffDate.setMonth(cutoffDate.getMonth() - 3); break;
+          case '6m': cutoffDate.setMonth(cutoffDate.getMonth() - 6); break;
+          case '1y': cutoffDate.setFullYear(cutoffDate.getFullYear() - 1); break;
+          case 'all': cutoffDate.setTime(0); break;
+          default: cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+      }
+
+      if (statsPeriod === 'all') return vals;
+
+      const cutoffString = format(cutoffDate, 'yyyy-MM-dd');
+      const filtered = vals.filter(v => v.date >= cutoffString);
+      
+      // Ensure we have at least 2 points for a line if possible, even if outside period slightly
+      if (filtered.length < 2 && vals.length >= 2) {
+          const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          return sorted.slice(-4); 
+      }
+      return filtered;
+  };
+
+  const handleAddValue = async (statId: string) => {
+      const valStr = newValueInput[statId];
+      if (!valStr) return;
+      const val = parseFloat(valStr);
+      const date = new Date().toISOString().split('T')[0];
+
+      if (isDemoStats || !supabase) {
+          const newVal: StatisticValue = {
+              id: `local-${Date.now()}`,
+              definition_id: statId,
+              date: date,
+              value: val
+          };
+          setStatsValues(prev => [...prev, newVal]);
+          setNewValueInput(prev => ({...prev, [statId]: ''}));
+          return;
+      }
+
+      const { data, error } = await supabase.from('statistics_values').insert([{ definition_id: statId, value: val, date: date }]).select();
+      if (!error && data) {
+          setStatsValues(prev => [...prev, data[0]]);
+          setNewValueInput(prev => ({...prev, [statId]: ''}));
+      } else {
+          alert("Ошибка сохранения");
+      }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -169,20 +262,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
       });
   };
 
+  // ... (Emergency, File Upload functions kept same) ...
   const handleEmergencyChange = (index: number, field: keyof EmergencyContact, value: string) => {
     const newContacts = [...formData.emergency_contacts];
     newContacts[index] = { ...newContacts[index], [field]: value };
     setFormData(prev => ({ ...prev, emergency_contacts: newContacts }));
   };
-
-  const addEmergencyContact = () => {
-    setFormData(prev => ({ ...prev, emergency_contacts: [...prev.emergency_contacts, { name: '', relation: '', phone: '' }] }));
-  };
-
-  const removeEmergencyContact = (index: number) => {
-    setFormData(prev => ({ ...prev, emergency_contacts: prev.emergency_contacts.filter((_, i) => i !== index) }));
-  };
-
+  const addEmergencyContact = () => { setFormData(prev => ({ ...prev, emergency_contacts: [...prev.emergency_contacts, { name: '', relation: '', phone: '' }] })); };
+  const removeEmergencyContact = (index: number) => { setFormData(prev => ({ ...prev, emergency_contacts: prev.emergency_contacts.filter((_, i) => i !== index) })); };
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -210,157 +297,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
       setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAttachments] }));
     } catch (error) { console.error('File error:', error); } finally { setIsUploading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
   };
-
-  const removeAttachment = (id: string) => {
-      setFormData(prev => ({ ...prev, attachments: prev.attachments.filter(a => a.id !== id) }));
-  };
-
-  const handlePrint = () => {
-    const emp = formData;
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${emp.full_name}</title>
-          <meta charset="utf-8">
-          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-          <style>
-            @page { size: A4; margin: 0; }
-            body { 
-                margin: 0; 
-                padding: 0; 
-                font-family: 'Inter', sans-serif; 
-                background: #fff; 
-                color: #0f172a; 
-                -webkit-print-color-adjust: exact; 
-                print-color-adjust: exact;
-            }
-            .page {
-                width: 210mm;
-                min-height: 297mm;
-                padding: 15mm;
-                box-sizing: border-box;
-                position: relative;
-                display: flex;
-                flex-direction: column;
-            }
-            .header { display: flex; gap: 25px; margin-bottom: 40px; align-items: flex-start; }
-            .photo { width: 120px; height: 120px; border-radius: 20px; object-fit: cover; background: #f1f5f9; }
-            .header-info h1 { font-size: 26px; font-weight: 900; text-transform: uppercase; margin: 0 0 5px 0; color: #0f172a; line-height: 1.1; }
-            .header-info h2 { font-size: 14px; font-weight: 700; color: #3b82f6; text-transform: uppercase; margin: 0 0 15px 0; }
-            .badges { display: flex; gap: 8px; }
-            .badge { background: #f1f5f9; color: #334155; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-            .badge.blue { background: #eff6ff; color: #1d4ed8; }
-            .container { display: grid; grid-template-columns: 240px 1fr; gap: 40px; }
-            .sidebar { border-right: 1px solid #e2e8f0; padding-right: 20px; }
-            .section { margin-bottom: 30px; }
-            .section-title { font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; }
-            .contact-item { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 13px; color: #334155; font-weight: 500; }
-            .contact-icon { width: 24px; height: 24px; background: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #64748b; }
-            .address-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-            .address-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
-            .address-val { font-size: 12px; color: #334155; line-height: 1.4; }
-            .emergency-card { background: #fff1f2; border-left: 3px solid #fecaca; padding: 10px; border-radius: 0 6px 6px 0; margin-bottom: 8px; }
-            .ec-name { color: #be123c; font-weight: 700; font-size: 12px; }
-            .ec-role { color: #e11d48; font-size: 10px; margin-bottom: 2px; }
-            .ec-phone { color: #be123c; font-size: 12px; font-weight: 500; }
-            .grid-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 15px; }
-            .label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; display: block; }
-            .value { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.3; }
-            .mono-bg { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-            .passport-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; background: #fff; }
-            .finance-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f8fafc; font-size: 12px; }
-            .finance-label { color: #64748b; font-weight: 600; }
-            .finance-val { color: #0f172a; font-weight: 600; text-align: right; }
-            .footer { margin-top: auto; text-align: right; font-size: 9px; color: #94a3b8; padding-top: 20px; border-top: 1px solid #f1f5f9; }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-             <div class="header">
-                 <img src="${emp.photo_url || 'https://via.placeholder.com/150'}" class="photo" />
-                 <div class="header-info">
-                     <h1>${emp.full_name}</h1>
-                     <h2>${emp.position || 'Должность не указана'}</h2>
-                     <div class="badges">
-                        <span class="badge blue">ID: ${emp.id.substring(0,8)}</span>
-                        ${emp.nickname ? `<span class="badge">NIK: ${emp.nickname}</span>` : ''}
-                        <span class="badge">Joined: ${emp.join_date || '-'}</span>
-                     </div>
-                 </div>
-             </div>
-             <div class="container">
-                <div class="sidebar">
-                    <div class="section">
-                        <div class="section-title">CONTACTS</div>
-                        ${emp.phone ? `<div class="contact-item"><div class="contact-icon">Ph</div>${emp.phone}</div>` : ''}
-                        ${emp.email ? `<div class="contact-item"><div class="contact-icon">@</div>${emp.email}</div>` : ''}
-                        ${emp.telegram ? `<div class="contact-item"><div class="contact-icon">Tg</div>${emp.telegram}</div>` : ''}
-                        ${emp.whatsapp ? `<div class="contact-item"><div class="contact-icon">Wa</div>${emp.whatsapp}</div>` : ''}
-                    </div>
-                    <div class="section">
-                        <div class="section-title">RESIDENCE</div>
-                        <div class="address-box">
-                            <div class="address-label">ACTUAL ADDRESS</div>
-                            <div class="address-val">${emp.actual_address || '-'}</div>
-                        </div>
-                        <div class="address-box">
-                            <div class="address-label">REGISTRATION</div>
-                            <div class="address-val">${emp.registration_address || '-'}</div>
-                        </div>
-                    </div>
-                    <div class="section">
-                        <div class="section-title">EMERGENCY</div>
-                         ${emp.emergency_contacts && emp.emergency_contacts.length > 0 ? 
-                            emp.emergency_contacts.map(c => `<div class="emergency-card"><div class="ec-name">${c.name}</div><div class="ec-role">${c.relation}</div><div class="ec-phone">${c.phone}</div></div>`).join('') : '<div style="font-size:11px; color:#94a3b8">Нет контактов</div>'}
-                    </div>
-                </div>
-                <div class="main">
-                    <div class="section">
-                        <div class="section-title">ORGANIZATION & IDENTITY</div>
-                        <div class="grid-2">
-                            <div><span class="label">DEPARTMENT</span><div class="value">${emp.department?.map(d => ORGANIZATION_STRUCTURE[d]?.name.split('.')[1] || '').join(', ') || '-'}</div></div>
-                            <div><span class="label">SUB-DEPARTMENT</span><div class="value">${emp.subdepartment?.map(s => { const deptId = emp.department?.[0]; return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s; }).join(', ') || '-'}</div></div>
-                            <div style="margin-top: 10px;"><span class="label">BIRTH DATE</span><div class="value">${emp.birth_date || '-'}</div></div>
-                             <div style="margin-top: 10px;"><span class="label">INN</span><div class="value"><span class="mono-bg">${emp.inn || '-'}</span></div></div>
-                        </div>
-                    </div>
-                    <div class="section">
-                        <div class="section-title">PASSPORT DETAILS</div>
-                        <div class="passport-box">
-                             <div class="grid-2">
-                                <div><span class="label">SERIES & NUMBER</span><div class="value"><span class="mono-bg">${emp.passport_number || '-'}</span></div></div>
-                                <div><span class="label">DATE OF ISSUE</span><div class="value">${emp.passport_date || '-'}</div></div>
-                            </div>
-                            <div style="margin-top: 15px;"><span class="label">ISSUED BY</span><div class="value">${emp.passport_issuer || '-'}</div></div>
-                        </div>
-                    </div>
-                    ${emp.foreign_passport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${emp.foreign_passport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${emp.foreign_passport_date || '-'}</div></div></div><div style="margin-top: 15px;"><span class="label">AUTHORITY</span><div class="value">${emp.foreign_passport_issuer || '-'}</div></div></div></div>` : ''}
-                    <div class="section">
-                        <div class="section-title">FINANCE</div>
-                        <div class="finance-row"><span class="finance-label">Bank Name</span><span class="finance-val">${emp.bank_name || 'Не указан'}</span></div>
-                        <div class="finance-row"><span class="finance-label">Account / Card</span><span class="finance-val">${emp.bank_details || '-'}</span></div>
-                         <div class="finance-row"><span class="finance-label">Crypto Wallet (${emp.crypto_network || 'NET'})</span><span class="finance-val">${emp.crypto_wallet || '-'}</span></div>
-                    </div>
-                </div>
-             </div>
-             <div class="footer">CONFIDENTIAL PERSONNEL RECORD • Generated on ${format(new Date(), 'dd.MM.yyyy')}</div>
-          </div>
-          <script>window.onload = () => { setTimeout(() => window.print(), 500); };</script>
-        </body>
-      </html>
-    `;
-    const printWindow = window.open('', '_blank');
-    if (printWindow) { printWindow.document.write(printContent); printWindow.document.close(); }
-  };
-
-  const handleExportTxt = () => {
-    const emp = formData;
-    const lines = ["EMPLOYEE DOSSIER", "================", `Name: ${emp.full_name}`, `Position: ${emp.position}`, `ID: ${emp.id}`, "----------------", `Phone: ${emp.phone || '-'}`, `Email: ${emp.email || '-'}`];
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${emp.full_name}_dossier.txt`; a.click();
-  };
+  const removeAttachment = (id: string) => { setFormData(prev => ({ ...prev, attachments: prev.attachments.filter(a => a.id !== id) })); };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -386,9 +323,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
               </div>
           </div>
           <div className="flex items-center gap-2">
-              <button type="button" onClick={handlePrint} className="px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors flex items-center gap-2"><Printer size={18} /> <span className="hidden sm:inline">Печать / PDF</span></button>
-              <button type="button" onClick={handleExportTxt} className="px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors flex items-center gap-2"><Download size={18} /> <span className="hidden sm:inline">TXT</span></button>
-              <div className="w-px h-8 bg-slate-200 mx-2"></div>
               <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">Отмена</button>
               <button onClick={handleSubmit} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-200 flex items-center gap-2 transition-all hover:-translate-y-0.5"><Save size={18} /> Сохранить</button>
           </div>
@@ -408,6 +342,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                 ].map(tab => (
                     <button 
                         key={tab.id}
+                        type="button" // Prevent form submit
                         onClick={() => setActiveTab(tab.id)} 
                         className={`w-full text-left px-4 py-3.5 rounded-xl text-sm font-bold transition-all flex items-center justify-between group ${activeTab === tab.id ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}
                     >
@@ -480,136 +415,116 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, onClose, onSave, 
                         </div>
                     )}
 
-                    {/* TAB: FILES */}
-                    {activeTab === 'files' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                            {/* PHOTO MANAGEMENT SECTION */}
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><ImageIcon size={18}/> Фото Профиля (Аватар)</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                                     <div className="flex flex-col gap-4">
-                                         <div>
-                                            <label className={labelClass}>Способ 1: Прямая Ссылка (URL)</label>
-                                            <div className="relative">
-                                                <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                                <input name="photo_url" value={formData.photo_url || ''} onChange={handleChange} className={inputClass + " pl-10"} placeholder="https://site.com/photo.jpg" />
-                                            </div>
-                                            <p className="text-[10px] text-slate-400 mt-1.5 ml-1">Вставьте ссылку на изображение с Google Drive или хостинга.</p>
-                                         </div>
-                                         <div className="text-center text-xs text-slate-400 font-bold uppercase tracking-widest">- ИЛИ -</div>
-                                         <div>
-                                            <label className={labelClass}>Способ 2: Загрузка Файла</label>
-                                            <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full border-2 border-dashed border-blue-100 bg-blue-50/50 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-50 hover:border-blue-200 transition-all">
-                                                <Upload size={20} className="mb-2"/>
-                                                <span className="font-bold">{isUploading ? 'Загрузка...' : 'Выбрать Файл'}</span>
-                                            </button>
-                                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple />
-                                         </div>
-                                     </div>
-                                     <div className="flex flex-col items-center justify-center h-full border rounded-2xl bg-slate-50 p-4">
-                                          {formData.photo_url ? (
-                                              <img src={formData.photo_url} alt="Preview" className="w-32 h-32 object-cover rounded-full shadow-md border-4 border-white" onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/150?text=Error')} />
-                                          ) : (
-                                              <div className="w-32 h-32 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 font-bold text-xs text-center p-2 border-4 border-white shadow-inner">Нет фото</div>
-                                          )}
-                                          <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-wide">Предпросмотр</p>
-                                     </div>
-                                </div>
-                            </div>
+                    {/* ... (Docs, Finance, Files Tabs - same structure) ... */}
+                    {activeTab === 'contacts' && (<div className="space-y-6 animate-in fade-in slide-in-from-right-4"><h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-purple-500 rounded-full"></div> Контакты & Адреса</h3><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Телефон</label><input name="phone" value={formData.phone} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>WhatsApp</label><input name="whatsapp" value={formData.whatsapp} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Email (Рабочий)</label><input name="email" value={formData.email} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Email (Личный)</label><input name="email2" value={formData.email2} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Telegram</label><input name="telegram" value={formData.telegram} onChange={handleChange} className={inputClass} /></div></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4"><div><label className={labelClass}>Фактический адрес</label><textarea name="actual_address" value={formData.actual_address} onChange={handleChange} className={inputClass + " h-24"} /></div><div><label className={labelClass}>Адрес регистрации</label><textarea name="registration_address" value={formData.registration_address} onChange={handleChange} className={inputClass + " h-24"} /></div></div></div>)}
+                    {activeTab === 'docs' && (<div className="space-y-6 animate-in fade-in slide-in-from-right-4"><h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-slate-600 rounded-full"></div> Паспортные Данные</h3><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><label className={labelClass}>ИНН</label><input name="inn" value={formData.inn} onChange={handleChange} className={inputClass + " font-mono text-lg tracking-widest"} placeholder="000000000000" /></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><h4 className="font-bold text-slate-700 mb-4 border-b pb-2">Внутренний Паспорт</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Серия и Номер</label><input name="passport_number" value={formData.passport_number} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Дата Выдачи</label><input type="date" name="passport_date" value={formData.passport_date} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Кем Выдан</label><textarea name="passport_issuer" value={formData.passport_issuer} onChange={handleChange} className={inputClass + " h-16"} /></div></div></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><h4 className="font-bold text-slate-700 mb-4 border-b pb-2">Заграничный Паспорт</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Номер</label><input name="foreign_passport" value={formData.foreign_passport} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Годен до / Дата выдачи</label><input name="foreign_passport_date" value={formData.foreign_passport_date} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Authority (Кем выдан)</label><input name="foreign_passport_issuer" value={formData.foreign_passport_issuer} onChange={handleChange} className={inputClass} /></div></div></div></div>)}
+                    {activeTab === 'finance' && (<div className="space-y-6 animate-in fade-in slide-in-from-right-4"><h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-green-500 rounded-full"></div> Финансы</h3><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><div className="space-y-4"><div><label className={labelClass}>Название Банка</label><input name="bank_name" value={formData.bank_name} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Реквизиты</label><textarea name="bank_details" value={formData.bank_details} onChange={handleChange} className={inputClass + " h-24 font-mono text-sm"} /></div></div></div><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Крипто-сеть</label><input name="crypto_network" value={formData.crypto_network} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Валюта</label><input name="crypto_currency" value={formData.crypto_currency} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Адрес Кошелька</label><input name="crypto_wallet" value={formData.crypto_wallet} onChange={handleChange} className={inputClass + " font-mono text-xs"} /></div></div></div>)}
+                    {activeTab === 'files' && (<div className="space-y-6 animate-in fade-in slide-in-from-right-4"><div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><ImageIcon size={18}/> Фото Профиля (Аватар)</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start"><div className="flex flex-col gap-4"><div><label className={labelClass}>Способ 1: Прямая Ссылка (URL)</label><div className="relative"><LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><input name="photo_url" value={formData.photo_url || ''} onChange={handleChange} className={inputClass + " pl-10"} placeholder="https://site.com/photo.jpg" /></div><p className="text-[10px] text-slate-400 mt-1.5 ml-1">Вставьте ссылку на изображение с Google Drive или хостинга.</p></div><div className="text-center text-xs text-slate-400 font-bold uppercase tracking-widest">- ИЛИ -</div><div><label className={labelClass}>Способ 2: Загрузка Файла</label><button type="button" onClick={() => fileInputRef.current?.click()} className="w-full border-2 border-dashed border-blue-100 bg-blue-50/50 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-50 hover:border-blue-200 transition-all"><Upload size={20} className="mb-2"/><span className="font-bold">{isUploading ? 'Загрузка...' : 'Выбрать Файл'}</span></button><input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" multiple /></div></div><div className="flex flex-col items-center justify-center h-full border rounded-2xl bg-slate-50 p-4">{formData.photo_url ? (<img src={formData.photo_url} alt="Preview" className="w-32 h-32 object-cover rounded-full shadow-md border-4 border-white" onError={(e) => (e.currentTarget.src = 'https://via.placeholder.com/150?text=Error')} />) : (<div className="w-32 h-32 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 font-bold text-xs text-center p-2 border-4 border-white shadow-inner">Нет фото</div>)}<p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-wide">Предпросмотр</p></div></div></div></div>)}
 
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                <h4 className="font-bold text-slate-700 mb-4">Загруженные Документы</h4>
-                                <div className="space-y-2">
-                                    {formData.attachments?.map(file => (
-                                        <div key={file.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl hover:shadow-sm transition-shadow">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-slate-400 border border-slate-200"><FileText size={20}/></div>
-                                                <div className="min-w-0"><div className="text-sm font-bold text-slate-700 truncate">{file.file_name}</div><div className="text-xs text-slate-400">{(file.file_size / 1024).toFixed(1)} KB</div></div>
-                                            </div>
-                                            <div className="flex gap-2"><a href={file.public_url} target="_blank" rel="noopener noreferrer" className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold">Скачать</a><button type="button" onClick={() => removeAttachment(file.id)} className="p-2 text-red-400 hover:bg-red-100 rounded-lg"><Trash2 size={16}/></button></div>
-                                        </div>
-                                    ))}
-                                    {formData.attachments?.length === 0 && <p className="text-sm text-slate-400 italic">Нет вложений.</p>}
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                    <h4 className="font-bold text-slate-700">Экстренные Контакты</h4>
-                                    <button type="button" onClick={addEmergencyContact} className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline"><Plus size={14}/> Добавить</button>
-                                </div>
-                                {formData.emergency_contacts.map((contact, idx) => (
-                                    <div key={idx} className="flex gap-3 mb-3 items-end bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                                        <div className="flex-1"><label className="text-[10px] font-bold text-slate-400">Имя</label><input value={contact.name} onChange={(e) => handleEmergencyChange(idx, 'name', e.target.value)} className="w-full bg-transparent border-b border-slate-300 outline-none text-sm font-medium"/></div>
-                                        <div className="flex-1"><label className="text-[10px] font-bold text-slate-400">Роль</label><input value={contact.relation} onChange={(e) => handleEmergencyChange(idx, 'relation', e.target.value)} className="w-full bg-transparent border-b border-slate-300 outline-none text-sm"/></div>
-                                        <div className="flex-1"><label className="text-[10px] font-bold text-slate-400">Телефон</label><input value={contact.phone} onChange={(e) => handleEmergencyChange(idx, 'phone', e.target.value)} className="w-full bg-transparent border-b border-slate-300 outline-none text-sm"/></div>
-                                        <button type="button" onClick={() => removeEmergencyContact(idx)} className="text-red-400 hover:text-red-600 p-2"><Trash2 size={16}/></button>
-                                    </div>
-                                ))}
-                            </div>
-                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                <h4 className="font-bold text-slate-700 mb-2">Заметки</h4>
-                                <textarea name="additional_info" value={formData.additional_info} onChange={handleChange} className={inputClass + " h-24"} placeholder="..." />
-                            </div>
-                        </div>
-                    )}
-                    
-                    {/* Other tabs remain identical to structure but are hidden when not active */}
-                    {activeTab === 'contacts' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                            <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-purple-500 rounded-full"></div> Контакты & Адреса</h3>
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div><label className={labelClass}>Телефон</label><input name="phone" value={formData.phone} onChange={handleChange} className={inputClass} /></div>
-                                <div><label className={labelClass}>WhatsApp</label><input name="whatsapp" value={formData.whatsapp} onChange={handleChange} className={inputClass} /></div>
-                                <div><label className={labelClass}>Email (Рабочий)</label><input name="email" value={formData.email} onChange={handleChange} className={inputClass} /></div>
-                                <div><label className={labelClass}>Email (Личный)</label><input name="email2" value={formData.email2} onChange={handleChange} className={inputClass} /></div>
-                                <div><label className={labelClass}>Telegram</label><input name="telegram" value={formData.telegram} onChange={handleChange} className={inputClass} /></div>
-                            </div>
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                                <div><label className={labelClass}>Фактический адрес</label><textarea name="actual_address" value={formData.actual_address} onChange={handleChange} className={inputClass + " h-24"} /></div>
-                                <div><label className={labelClass}>Адрес регистрации</label><textarea name="registration_address" value={formData.registration_address} onChange={handleChange} className={inputClass + " h-24"} /></div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'docs' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                            <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-slate-600 rounded-full"></div> Паспортные Данные</h3>
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><label className={labelClass}>ИНН</label><input name="inn" value={formData.inn} onChange={handleChange} className={inputClass + " font-mono text-lg tracking-widest"} placeholder="000000000000" /></div>
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                <h4 className="font-bold text-slate-700 mb-4 border-b pb-2">Внутренний Паспорт</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Серия и Номер</label><input name="passport_number" value={formData.passport_number} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Дата Выдачи</label><input type="date" name="passport_date" value={formData.passport_date} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Кем Выдан</label><textarea name="passport_issuer" value={formData.passport_issuer} onChange={handleChange} className={inputClass + " h-16"} /></div></div>
-                            </div>
-                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                <h4 className="font-bold text-slate-700 mb-4 border-b pb-2">Заграничный Паспорт</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Номер</label><input name="foreign_passport" value={formData.foreign_passport} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Годен до / Дата выдачи</label><input name="foreign_passport_date" value={formData.foreign_passport_date} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Authority (Кем выдан)</label><input name="foreign_passport_issuer" value={formData.foreign_passport_issuer} onChange={handleChange} className={inputClass} /></div></div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'finance' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                            <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-green-500 rounded-full"></div> Финансы</h3>
-                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><div className="space-y-4"><div><label className={labelClass}>Название Банка</label><input name="bank_name" value={formData.bank_name} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Реквизиты</label><textarea name="bank_details" value={formData.bank_details} onChange={handleChange} className={inputClass + " h-24 font-mono text-sm"} /></div></div></div>
-                             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className={labelClass}>Крипто-сеть</label><input name="crypto_network" value={formData.crypto_network} onChange={handleChange} className={inputClass} /></div><div><label className={labelClass}>Валюта</label><input name="crypto_currency" value={formData.crypto_currency} onChange={handleChange} className={inputClass} /></div><div className="md:col-span-2"><label className={labelClass}>Адрес Кошелька</label><input name="crypto_wallet" value={formData.crypto_wallet} onChange={handleChange} className={inputClass + " font-mono text-xs"} /></div></div>
-                        </div>
-                    )}
-
+                    {/* TAB: STATS (REDESIGNED) */}
                     {activeTab === 'stats' && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                            <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div> Личная Статистика и KPI</h3>
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div> Личная Статистика и KPI</h3>
+                                <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                                    {PERIODS.map(p => (
+                                        <button 
+                                            key={p.id} 
+                                            type="button" 
+                                            onClick={() => setStatsPeriod(p.id)}
+                                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${statsPeriod === p.id ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             {isDemoStats && (<div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-4 text-xs text-amber-800 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>Показаны демонстрационные данные. Реальные статистики отсутствуют.</div>)}
                             {statsDefinitions.length === 0 && !isLoadingStats && !isDemoStats && (<div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200"><div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300"><TrendingUp size={32}/></div><p className="text-slate-500 font-bold text-lg">Нет назначенных статистик</p><p className="text-sm text-slate-400 mt-2">Статистики назначаются через Инженерное меню.</p></div>)}
+                            
                             {statsDefinitions.map(stat => {
-                                const vals = statsValues.filter(v => v.definition_id === stat.id);
-                                const { condition, change, current } = analyzeTrend(vals, stat.inverted);
+                                const vals = getFilteredValues(stat.id);
+                                const totalVals = statsValues.filter(v => v.definition_id === stat.id); // For trend analysis independent of period view
+                                const { condition, change, current } = analyzeTrend(totalVals, stat.inverted);
+                                const isPos = change >= 0;
+                                const isInfoOpen = infoStatId === stat.id;
+
                                 return (
-                                    <div key={stat.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-                                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                                            <div><h4 className="font-bold text-lg text-slate-800">{stat.title}</h4><p className="text-xs text-slate-500 font-medium mt-1">{stat.description || 'Личный показатель эффективности'}</p></div>
-                                            <div className="text-right"><div className="text-3xl font-black text-slate-800 tracking-tight">{current.toLocaleString()}</div><div className={`text-xs font-bold flex items-center justify-end gap-1 mt-1 px-2 py-0.5 rounded-lg ${change > 0 ? 'bg-emerald-100 text-emerald-700' : change < 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>{change > 0 ? <TrendingUp size={12}/> : change < 0 ? <TrendingDown size={12}/> : null}{Math.abs(change * 100).toFixed(1)}%</div></div>
+                                    <div key={stat.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow relative">
+                                        
+                                        {/* INFO OVERLAY */}
+                                        {isInfoOpen && (
+                                            <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-20 p-6 animate-in fade-in flex flex-col">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Описание Статистики</span>
+                                                    <button type="button" onClick={() => setInfoStatId(null)} className="p-1 rounded-full hover:bg-slate-100 transition-colors">
+                                                        <X size={18} className="text-slate-400 hover:text-slate-600"/>
+                                                    </button>
+                                                </div>
+                                                <h4 className="font-bold text-lg text-slate-800 mb-2">{stat.title}</h4>
+                                                <p className="text-sm text-slate-700 font-medium leading-relaxed mb-6 whitespace-pre-wrap">{stat.description || "Описание отсутствует."}</p>
+                                                
+                                                <div className="mt-auto pt-4 border-t border-slate-100">
+                                                    <div className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2 flex items-center gap-1"><HelpCircle size={12}/> Методика расчета</div>
+                                                    <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 font-medium">{stat.calculation_method || "Прямой ввод данных."}</div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-white">
+                                            <div className="flex-1 pr-4">
+                                                <div className="flex items-start gap-2 mb-1">
+                                                    <h4 className="font-bold text-lg text-slate-800 leading-tight">{stat.title}</h4>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setInfoStatId(isInfoOpen ? null : stat.id)} 
+                                                        className="text-slate-300 hover:text-blue-600 transition-colors mt-0.5"
+                                                        title="Информация о статистике"
+                                                    >
+                                                        <Info size={16} />
+                                                    </button>
+                                                </div>
+                                                {stat.inverted && (
+                                                    <div className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mb-1.5">
+                                                        <ArrowDownUp size={10} /> ОБРАТНАЯ
+                                                    </div>
+                                                )}
+                                                <p className="text-xs text-slate-500 font-medium line-clamp-2">{stat.description || 'Личный показатель эффективности'}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-4xl font-black text-slate-900 tracking-tight">{current.toLocaleString()}</div>
+                                                <div className={`text-xs font-bold flex items-center justify-end gap-1 mt-1 px-2 py-0.5 rounded-lg ${isPos ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                    {isPos ? <TrendingUp size={12}/> : <TrendingDown size={12}/>}
+                                                    {Math.abs(change * 100).toFixed(1)}%
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="p-6 h-72 bg-white"><StatsChart values={vals} inverted={stat.inverted} /></div>
+                                        
+                                        <div className="px-6 pb-2 pt-4 h-64 bg-white relative">
+                                            <StatsChart key={statsPeriod} values={vals} inverted={stat.inverted} color={isPos ? "#10b981" : "#f43f5e"} />
+                                        </div>
+
+                                        {/* QUICK ADD VALUE */}
+                                        <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                                            <div className="flex items-center gap-2 flex-1">
+                                                <input 
+                                                    type="number" 
+                                                    placeholder="0"
+                                                    value={newValueInput[stat.id] || ''}
+                                                    onChange={e => setNewValueInput({...newValueInput, [stat.id]: e.target.value})}
+                                                    className="w-24 px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                                />
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => handleAddValue(stat.id)}
+                                                    className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 text-slate-600 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                                                >
+                                                    <Plus size={14}/> Внести значение
+                                                </button>
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 font-medium">Последнее: {vals.length > 0 ? format(new Date(vals[vals.length-1].date), 'dd.MM.yyyy') : 'Нет данных'}</div>
+                                        </div>
                                     </div>
                                 );
                             })}

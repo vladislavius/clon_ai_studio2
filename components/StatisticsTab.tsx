@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { StatisticDefinition, StatisticValue, WiseCondition, Employee } from '../types';
 import { ORGANIZATION_STRUCTURE, HANDBOOK_STATISTICS } from '../constants';
 import StatsChart from './StatsChart';
-import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface StatisticsTabProps {
@@ -335,7 +335,14 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
               <div className="p-3 pl-4 flex flex-col h-full relative">
                   <div className="flex justify-between items-start mb-2">
                       <div className="flex-1 pr-6">
-                           <h3 className="text-xs font-bold text-slate-800 leading-snug line-clamp-2" title={stat.title}>{stat.title}</h3>
+                           <div className="flex items-center gap-1.5">
+                                <h3 className="text-xs font-bold text-slate-800 leading-snug line-clamp-2" title={stat.title}>{stat.title}</h3>
+                                {stat.inverted && (
+                                    <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0">
+                                        <ArrowDownUp size={8}/> ОБР
+                                    </span>
+                                )}
+                           </div>
                            <div className="text-[9px] text-slate-400 font-medium truncate mt-0.5">{getOwnerName(stat.owner_id || '')}</div>
                       </div>
                       {!isEditMode && <button onClick={(e) => { e.stopPropagation(); setInfoCardId(isInfoOpen ? null : stat.id); }} className={`p-1 rounded-md transition-all ${isInfoOpen ? 'bg-slate-800 text-white' : 'text-slate-300 hover:text-slate-600 hover:bg-slate-50'}`}><Info size={14} /></button>}
@@ -380,7 +387,9 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
               const isSpecificView = selectedDeptId === deptId;
 
               if (!isSpecificView) {
-                  const allDeptStats = [...deptStats, ...subDeptStats].filter(s => s.is_favorite);
+                  // Show ONLY main Department stats on the main dashboard (hide sub-departments)
+                  const allDeptStats = deptStats; 
+                  
                   // In Edit Mode, we show the section even if empty so you can add to it
                   if (allDeptStats.length === 0 && !isEditMode) return null;
 
@@ -402,6 +411,7 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                       </div>
                   );
               } else {
+                  // Specific View: Show Main Stats AND Sub-department Stats
                   return (
                       <div key={deptId} className="space-y-6">
                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative overflow-hidden">

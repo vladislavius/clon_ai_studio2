@@ -66,9 +66,14 @@ export interface Department {
   color: string;
   icon: string;
   description: string;
+  longDescription?: string; // New: Detailed description
+  functions?: string[]; // New: List of functions
+  mainStat?: string; // New: Main Statistic name
   manager: string;
   goal?: string; // Цель
   vfp?: string; // Ценный Конечный Продукт (ЦКП)
+  troubleSigns?: string[]; // New: Признаки проблем
+  developmentActions?: string[]; // New: Действия по развитию
   departments?: Record<string, SubDepartment>;
 }
 
@@ -77,6 +82,8 @@ export interface SubDepartment {
   name: string;
   code: string;
   manager: string;
+  description?: string; // New
+  vfp?: string; // New
 }
 
 // --- Statistics Types ---

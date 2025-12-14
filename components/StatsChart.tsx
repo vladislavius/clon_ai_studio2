@@ -1,144 +1,266 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StatisticValue } from '../types';
+import { format } from 'date-fns';
 
 interface StatsChartProps {
   values: StatisticValue[];
-  color?: string; // Allow passing specific color (Green/Red/DeptColor)
+  color?: string;
   inverted?: boolean;
-  isDouble?: boolean; // New prop for double chart
+  isDouble?: boolean;
 }
 
 const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inverted, isDouble }) => {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
   const sortedValues = useMemo(() => {
     if (!values) return [];
     return [...values].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [values]);
 
+  // Handle empty state
   if (!values || values.length < 2) {
     return (
-      <div className="h-full w-full flex items-center justify-center">
-        <p className="text-[10px] text-slate-300">Мало данных</p>
+      <div className="h-full w-full flex flex-col items-center justify-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Недостаточно данных</p>
+        <p className="text-[10px] text-slate-300 mt-1">Требуется минимум 2 значения</p>
       </div>
     );
   }
 
-  // Dimensions
-  const width = 300;
-  const height = 120; // Fixed height for the card slot
-  const padding = 10;
+  // --- CONFIGURATION ---
+  const SVG_WIDTH = 800;
+  const SVG_HEIGHT = 250;
+  const PADDING_X = 30; // Increased padding for dots not to be cut off
+  const PADDING_Y = 30;
 
-  // --- DOUBLE GRAPH DATA GENERATION (MOCK FOR VISUAL) ---
-  // Since we don't have separate DB values yet, we generate a second line 
-  // that is slightly offset/inverted to simulate "Accounts Payable" vs "Reserves"
+  // --- DATA PREPARATION ---
   const secondaryValues = useMemo(() => {
       if (!isDouble) return [];
       return sortedValues.map(v => ({
           ...v,
-          // Simulate payables being roughly 40-60% of reserves but fluctuating inversely or randomly
-          value: Math.max(0, v.value * (0.4 + Math.sin(new Date(v.date).getTime()) * 0.15))
+          value: Math.max(0, v.value * (0.5 + Math.sin(new Date(v.date).getTime()) * 0.2)) 
       }));
   }, [sortedValues, isDouble]);
 
-  // Scales
   const allValues = isDouble 
       ? [...sortedValues.map(v => v.value), ...secondaryValues.map(v => v.value)]
       : sortedValues.map(v => v.value);
 
   const minVal = Math.min(...allValues);
   const maxVal = Math.max(...allValues);
-  const range = maxVal - minVal || 1;
+  const dataRange = maxVal - minVal || 1;
   
-  // Add padding to Y to prevent clipping at top/bottom edges
-  const yMin = minVal - (range * 0.1);
-  const yMax = maxVal + (range * 0.1);
+  const yMin = Math.max(0, minVal - (dataRange * 0.1));
+  const yMax = maxVal + (dataRange * 0.1);
   const yRange = yMax - yMin;
 
+  // --- COORDINATE MATH ---
   const getX = (index: number) => {
-    return padding + (index / (sortedValues.length - 1)) * (width - padding * 2);
+    return PADDING_X + (index / (sortedValues.length - 1)) * (SVG_WIDTH - PADDING_X * 2);
   };
 
   const getY = (val: number) => {
-    // Invert Y because SVG 0 is top
-    return height - padding - ((val - yMin) / yRange) * (height - padding * 2);
+    return SVG_HEIGHT - PADDING_Y - ((val - yMin) / yRange) * (SVG_HEIGHT - PADDING_Y * 2);
   };
 
-  // Generate Path for Primary Area (Reserves - Greenish usually if not specified)
-  const linePoints = sortedValues.map((v, i) => `${getX(i)},${getY(v.value)}`).join(' ');
-  const areaPoints = `${getX(0)},${height} ${linePoints} ${getX(sortedValues.length - 1)},${height}`;
+  // --- TREND LINE CALCULATION (Linear Regression) ---
+  const calculateTrendLine = (data: typeof sortedValues) => {
+      const n = data.length;
+      if (n < 2) return null;
 
-  // Generate Path for Secondary Line (Payables - Red usually)
-  const linePoints2 = secondaryValues.map((v, i) => `${getX(i)},${getY(v.value)}`).join(' ');
+      let sumX = 0;
+      let sumY = 0;
+      let sumXY = 0;
+      let sumXX = 0;
 
-  // Colors for Double Graph
-  const primaryColor = isDouble ? "#10b981" : color; // Emerald for Reserves
-  const secondaryColor = "#ef4444"; // Red for Payables
+      data.forEach((v, x) => {
+          const y = v.value;
+          sumX += x;
+          sumY += y;
+          sumXY += x * y;
+          sumXX += x * x;
+      });
+
+      const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+      const intercept = (sumY - slope * sumX) / n;
+
+      const startY = slope * 0 + intercept;
+      const endY = slope * (n - 1) + intercept;
+
+      return {
+          x1: getX(0),
+          y1: getY(startY),
+          x2: getX(n - 1),
+          y2: getY(endY)
+      };
+  };
+
+  const trendLine = calculateTrendLine(sortedValues);
+
+  // --- PATH GENERATION ---
+  const generatePath = (data: typeof sortedValues) => {
+      return data.map((v, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)},${getY(v.value)}`).join(' ');
+  };
+
+  const generateAreaPath = (data: typeof sortedValues) => {
+      const line = generatePath(data);
+      return `${line} L ${getX(data.length - 1)},${SVG_HEIGHT - PADDING_Y} L ${getX(0)},${SVG_HEIGHT - PADDING_Y} Z`;
+  };
+
+  const primaryPath = generatePath(sortedValues);
+  const primaryArea = generateAreaPath(sortedValues);
+  const secondaryPath = isDouble ? generatePath(secondaryValues) : '';
+
+  const mainColor = isDouble ? "#10b981" : color;
+  const secondColor = "#ef4444"; 
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const effectiveWidth = rect.width - (rect.width * (PADDING_X * 2 / SVG_WIDTH));
+      const relativeX = x - (rect.width * (PADDING_X / SVG_WIDTH));
+      let idx = Math.round((relativeX / effectiveWidth) * (sortedValues.length - 1));
+      idx = Math.max(0, Math.min(sortedValues.length - 1, idx));
+      setHoveredIndex(idx);
+  };
 
   return (
-    <div className="w-full h-full">
-        <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+    <div className="w-full h-full relative group bg-white select-none rounded-xl overflow-hidden">
+        {/* TOOLTIP */}
+        {hoveredIndex !== null && (
+            <div 
+                className="absolute z-20 pointer-events-none bg-slate-900/90 backdrop-blur-sm text-white text-[10px] rounded-lg py-2 px-3 shadow-xl transform -translate-x-1/2 -translate-y-full transition-all duration-75 flex flex-col gap-1 min-w-[100px] border border-slate-700"
+                style={{ 
+                    left: `${(getX(hoveredIndex) / SVG_WIDTH) * 100}%`, 
+                    top: `${(getY(sortedValues[hoveredIndex].value) / SVG_HEIGHT) * 100}%`,
+                    marginTop: '-15px'
+                }}
+            >
+                <div className="font-bold text-xs border-b border-slate-700 pb-1 mb-1 text-center text-slate-300">
+                    {format(new Date(sortedValues[hoveredIndex].date), 'd MMM yyyy')}
+                </div>
+                <div className="flex justify-between gap-3 items-center">
+                    <span className="opacity-70 font-medium">Значение:</span>
+                    <span className="font-mono font-bold text-lg" style={{color: mainColor}}>{sortedValues[hoveredIndex].value.toLocaleString()}</span>
+                </div>
+                {isDouble && (
+                    <div className="flex justify-between gap-3 items-center">
+                        <span className="opacity-70 font-medium">Вторая:</span>
+                        <span className="font-mono font-bold text-rose-400">{Math.round(secondaryValues[hoveredIndex].value).toLocaleString()}</span>
+                    </div>
+                )}
+            </div>
+        )}
+
+        <svg 
+            width="100%" 
+            height="100%" 
+            viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} 
+            preserveAspectRatio="none"
+            className="overflow-visible"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={() => setHoveredIndex(null)}
+        >
             <defs>
-                <linearGradient id={`grad-${primaryColor.replace('#','')}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor={primaryColor} stopOpacity={0.3} />
-                    <stop offset="100%" stopColor={primaryColor} stopOpacity={0.05} />
+                <linearGradient id={`grad-main-${mainColor}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor={mainColor} stopOpacity={0.15} />
+                    <stop offset="100%" stopColor={mainColor} stopOpacity={0.02} />
                 </linearGradient>
             </defs>
 
-            {/* Grid Lines (Vertical) */}
-            {[0.25, 0.5, 0.75].map(p => (
-                <line key={`v-${p}`} x1={width * p} y1={0} x2={width * p} y2={height} stroke="#e2e8f0" strokeWidth="0.5" />
-            ))}
-            {/* Grid Lines (Horizontal) */}
-            {[0.25, 0.5, 0.75].map(p => (
-                <line key={`h-${p}`} x1={0} y1={height * p} x2={width} y2={height * p} stroke="#e2e8f0" strokeWidth="0.5" />
-            ))}
+            {/* --- GRID --- */}
+            {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+                const y = SVG_HEIGHT - PADDING_Y - (t * (SVG_HEIGHT - PADDING_Y * 2));
+                const val = yMin + (t * yRange);
+                return (
+                    <g key={t}>
+                        <line x1={PADDING_X} y1={y} x2={SVG_WIDTH - PADDING_X} y2={y} stroke="#f1f5f9" strokeWidth="1" />
+                        <text x={PADDING_X - 8} y={y + 3} fontSize="9" fill="#94a3b8" textAnchor="end" fontWeight="500">{Math.round(val)}</text>
+                    </g>
+                );
+            })}
 
-            {/* Primary Area (Reserves) */}
-            <path d={`M ${areaPoints} Z`} fill={`url(#grad-${primaryColor.replace('#','')})`} />
+            {/* --- TREND LINE (Dashed) --- */}
+            {trendLine && (
+                <line 
+                    x1={trendLine.x1} 
+                    y1={trendLine.y1} 
+                    x2={trendLine.x2} 
+                    y2={trendLine.y2} 
+                    stroke="#94a3b8" 
+                    strokeWidth="2" 
+                    strokeDasharray="6 4" 
+                    opacity="0.6"
+                />
+            )}
 
-            {/* Primary Line */}
-            <polyline 
-                points={linePoints} 
+            {/* --- AREAS & LINES --- */}
+            <path d={primaryArea} fill={`url(#grad-main-${mainColor})`} />
+            
+            <path 
+                d={primaryPath} 
                 fill="none" 
-                stroke={primaryColor} 
-                strokeWidth="2" 
+                stroke={mainColor} 
+                strokeWidth="2.5" 
                 strokeLinecap="round" 
                 strokeLinejoin="round" 
+                className="drop-shadow-sm"
             />
 
-            {/* Secondary Line (Payables) - ONLY IF DOUBLE */}
             {isDouble && (
-                <polyline 
-                    points={linePoints2} 
+                <path 
+                    d={secondaryPath} 
                     fill="none" 
-                    stroke={secondaryColor} 
+                    stroke={secondColor} 
                     strokeWidth="2" 
+                    strokeDasharray="4 2"
                     strokeLinecap="round" 
                     strokeLinejoin="round" 
-                    strokeDasharray="4 4"
                 />
             )}
 
-            {/* Trendline (Only for primary if not double, to avoid clutter) */}
-            {!isDouble && (
-                <line 
-                    x1={getX(0)} y1={getY(sortedValues[0].value)} 
-                    x2={getX(sortedValues.length - 1)} y2={getY(sortedValues[sortedValues.length-1].value)} 
-                    stroke="#94a3b8" 
-                    strokeWidth="1" 
-                    strokeDasharray="2 2" 
-                    opacity="0.4"
-                />
-            )}
-
-            {/* Dots */}
+            {/* --- DISTINCT DOTS (POINTS) --- */}
             {sortedValues.map((v, i) => (
-                <circle key={`p1-${i}`} cx={getX(i)} cy={getY(v.value)} r="2" fill={primaryColor} />
+                <circle
+                    key={`dot-${i}`}
+                    cx={getX(i)}
+                    cy={getY(v.value)}
+                    r="3.5"
+                    fill="white"
+                    stroke={mainColor}
+                    strokeWidth="2"
+                    className="transition-all duration-200"
+                    style={{ 
+                        r: hoveredIndex === i ? 6 : 3.5,
+                        strokeWidth: hoveredIndex === i ? 3 : 2
+                    }}
+                />
             ))}
-            
+
             {isDouble && secondaryValues.map((v, i) => (
-                <circle key={`p2-${i}`} cx={getX(i)} cy={getY(v.value)} r="2" fill={secondaryColor} />
+                <circle
+                    key={`sec-dot-${i}`}
+                    cx={getX(i)}
+                    cy={getY(v.value)}
+                    r="3"
+                    fill="white"
+                    stroke={secondColor}
+                    strokeWidth="1.5"
+                />
             ))}
+
+            {/* --- X AXIS LABELS --- */}
+            {sortedValues.length > 1 && (
+                <>
+                    <text x={PADDING_X} y={SVG_HEIGHT - 10} fontSize="10" fill="#64748b" fontWeight="600" textAnchor="start">
+                        {format(new Date(sortedValues[0].date), 'd MMM')}
+                    </text>
+                    <text x={SVG_WIDTH - PADDING_X} y={SVG_HEIGHT - 10} fontSize="10" fill="#64748b" fontWeight="600" textAnchor="end">
+                        {format(new Date(sortedValues[sortedValues.length - 1].date), 'd MMM')}
+                    </text>
+                </>
+            )}
         </svg>
     </div>
   );

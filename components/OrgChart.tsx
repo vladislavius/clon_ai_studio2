@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Employee } from '../types';
-import { User, X, Search, FileText, Printer, ChevronRight, Users, Crown, Target, Award, ChevronDown, ArrowDown } from 'lucide-react';
+import { User, X, Search, FileText, Printer, ChevronRight, Users, Crown, Target, Award, ChevronDown, ArrowDown, Copy, Check, MessageCircle, Phone, Hash, AlertTriangle, Zap } from 'lucide-react';
 
 interface OrgChartProps {
   employees: Employee[];
@@ -16,6 +16,8 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
   const [selectedSubDeptId, setSelectedSubDeptId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   
   // State for collapsible cards
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
@@ -26,9 +28,9 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
   };
 
   const handleDeptClick = (deptId: string, subDeptId?: string) => {
-      // Prevent clicking if no employees (optional check, currently disabled for better UX)
       setSelectedDeptId(deptId);
       setSelectedSubDeptId(subDeptId || null);
+      setSearchTerm(''); // Reset search on open
       setIsDrawerOpen(true);
   };
 
@@ -40,41 +42,62 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
               return deptMatch && emp.subdepartment?.includes(selectedSubDeptId);
           }
           return deptMatch;
-      });
+      }).filter(emp => 
+        emp.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        emp.position.toLowerCase().includes(searchTerm.toLowerCase())
+      );
   };
 
-  const quickExportTxt = (e: React.MouseEvent, emp: Employee) => {
-    e.stopPropagation();
-    const lines = [
-        "EMPLOYEE BRIEF",
-        "==============",
-        `Name: ${emp.full_name}`,
-        `Position: ${emp.position}`,
-        `Department: ${ORGANIZATION_STRUCTURE[emp.department?.[0] || '']?.name || '-'}`,
-    ];
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${emp.full_name.replace(/\s+/g, '_')}_brief.txt`;
-    a.click();
+  const handleCopy = (text: string, id: string) => {
+      navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
   };
 
-  const quickPrint = (e: React.MouseEvent, emp: Employee) => {
-    e.stopPropagation();
-    const printContent = `<html><head><title>${emp.full_name}</title></head><body><h1>${emp.full_name}</h1><p>${emp.position}</p></body></html>`;
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-        printWindow.document.write(printContent);
-        printWindow.document.close();
-        setTimeout(() => printWindow.print(), 500);
-    }
+  const handleCopyAll = (emp: Employee) => {
+      const text = [
+          `Имя: ${emp.full_name}`,
+          `Должность: ${emp.position}`,
+          `NIK: ${emp.nickname || '-'}`,
+          `Телефон: ${emp.phone || '-'}`,
+          `Telegram: ${emp.telegram || '-'}`
+      ].join('\n');
+      handleCopy(text, `all-${emp.id}`);
   };
 
   const currentDept = selectedDeptId ? ORGANIZATION_STRUCTURE[selectedDeptId] : null;
   const filteredList = getFilteredEmployees();
   const ownerStruct = ORGANIZATION_STRUCTURE['owner'];
-  const directorName = ORGANIZATION_STRUCTURE['dept7']?.departments?.['dept7_19']?.manager || "Генеральный Директор";
+  const directorName = ORGANIZATION_STRUCTURE['dept7']?.departments?.['dept7_19']?.manager || "ИД";
+
+  // Determine which description to show
+  let descriptionTitle = '';
+  let descriptionText = '';
+  let vfpText = '';
+  let functions: string[] = [];
+  let mainStat = '';
+  let managerName = '';
+  let troubleSigns: string[] = [];
+  let developmentActions: string[] = [];
+
+  if (currentDept) {
+      if (selectedSubDeptId && currentDept.departments) {
+          const sub = currentDept.departments[selectedSubDeptId];
+          descriptionTitle = sub.name;
+          descriptionText = sub.description || '';
+          vfpText = sub.vfp || '';
+          managerName = sub.manager;
+      } else {
+          descriptionTitle = currentDept.fullName;
+          descriptionText = currentDept.longDescription || currentDept.description;
+          vfpText = currentDept.vfp || '';
+          functions = currentDept.functions || [];
+          mainStat = currentDept.mainStat || '';
+          managerName = currentDept.manager;
+          troubleSigns = currentDept.troubleSigns || [];
+          developmentActions = currentDept.developmentActions || [];
+      }
+  }
 
   return (
     <div className="h-full flex flex-col relative bg-slate-50/50 overflow-hidden">
@@ -119,7 +142,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                                 <User size={20}/>
                             </div>
                             <div className="min-w-0">
-                                <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider mb-0.5">Ген. Директор</div>
+                                <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider mb-0.5">Исполнительный Директор</div>
                                 <div className="font-bold text-slate-800 text-sm leading-tight truncate">{directorName}</div>
                             </div>
                         </div>
@@ -168,7 +191,9 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                                                 </div>
                                             </div>
                                             
-                                            <h3 className="text-xs font-bold text-slate-800 leading-tight mb-2 h-8 line-clamp-2">{dept.fullName.split(':')[1] || dept.name}</h3>
+                                            <h3 className="text-xs font-bold text-slate-800 leading-tight mb-2 min-h-[1.5rem] break-words">
+                                                {dept.fullName.split(':')[1] || dept.name}
+                                            </h3>
                                             
                                             <div className="flex items-center gap-2 mt-1 p-1.5 rounded-lg border border-slate-100 bg-slate-50/50">
                                                  <div className="w-4 h-4 rounded-full bg-white border border-slate-200 flex items-center justify-center flex-shrink-0 text-slate-400">
@@ -194,7 +219,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                                                         <span className="text-[7px] font-black uppercase text-slate-300 tracking-widest">DIV {sub.code}</span>
                                                         <ChevronRight size={8} className="text-slate-300 group-hover/item:text-slate-500 transition-colors"/>
                                                     </div>
-                                                    <div className="font-bold text-slate-700 text-[11px] leading-snug mb-1 group-hover/item:text-slate-900 line-clamp-2">{sub.name}</div>
+                                                    <div className="font-bold text-slate-700 text-[11px] leading-snug mb-1 group-hover/item:text-slate-900 break-words">{sub.name}</div>
                                                     
                                                     <div className="flex items-center justify-between border-t border-slate-50 pt-1">
                                                         <div className="flex items-center gap-1 text-[8px] text-slate-400">
@@ -246,67 +271,207 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
         {/* EMPLOYEE DRAWER (SLIDE OVER) */}
         {isDrawerOpen && currentDept && (
             <div className="absolute inset-0 z-50 flex justify-end bg-slate-900/10 backdrop-blur-[2px] animate-in fade-in duration-300">
-                <div className="w-full md:w-[450px] bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 border-l border-slate-100">
+                <div className="w-full md:w-[550px] bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 border-l border-slate-100">
                     
-                    {/* Drawer Header */}
-                    <div className="p-8 border-b border-slate-100 bg-white relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-slate-50 rounded-full -mr-20 -mt-20 z-0"></div>
-                        <div className="relative z-10">
-                            <div className="flex justify-between items-start mb-6">
-                                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg" style={{ backgroundColor: currentDept.color }}>
-                                    {selectedDeptId === 'owner' ? <Crown size={24}/> : currentDept.name.substring(0,1)}
-                                </div>
-                                <button onClick={() => setIsDrawerOpen(false)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"><X size={20} className="text-slate-600"/></button>
+                    {/* Drawer Header (Full Width Text) */}
+                    <div className="p-4 border-b border-slate-100 bg-white relative overflow-hidden flex items-start justify-between shadow-sm z-30">
+                        <div className="flex items-center gap-3 flex-1 min-w-0 pr-3">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md flex-shrink-0" style={{ backgroundColor: currentDept.color }}>
+                                {selectedDeptId === 'owner' ? <Crown size={20}/> : currentDept.name.substring(0,1)}
                             </div>
-                            
-                            <h3 className="text-2xl font-black text-slate-800 leading-tight mb-2">
-                                {selectedSubDeptId ? currentDept.departments?.[selectedSubDeptId]?.name : currentDept.fullName}
-                            </h3>
-                            <p className="text-sm text-slate-500 font-medium">
-                                {selectedSubDeptId ? `Подразделение департамента ${currentDept.name.split('.')[0]}` : selectedDeptId === 'owner' ? 'Офис учредителя' : 'Список всех сотрудников департамента'}
-                            </p>
+                            <div className="min-w-0 flex-1">
+                                <h3 className="text-lg font-black text-slate-800 leading-tight break-words">
+                                    {descriptionTitle}
+                                </h3>
+                            </div>
                         </div>
+                        <button onClick={() => setIsDrawerOpen(false)} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors flex-shrink-0"><X size={20} className="text-slate-500"/></button>
                     </div>
 
-                    {/* Search & List */}
-                    <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-20">
-                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                            <input type="text" placeholder="Найти сотрудника..." className="w-full pl-10 pr-4 py-3 bg-slate-50 border-none rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-100 transition-all text-slate-800 placeholder:text-slate-400"/>
+                    {/* SCROLLABLE CONTENT */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 relative">
+                        
+                        {/* DESCRIPTION SECTION (Before Manager) */}
+                        <div className="bg-white p-6 border-b border-slate-100">
+                             
+                             {/* Description Text */}
+                             {descriptionText && (
+                                <div className="mb-5">
+                                    <h4 className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 flex items-center gap-1"><FileText size={10}/> Описание</h4>
+                                    <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{descriptionText}</p>
+                                </div>
+                             )}
+
+                             {/* Main Statistic (if exists) */}
+                             {mainStat && (
+                                 <div className="mb-5 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                      <h4 className="text-[10px] uppercase font-black text-blue-400 tracking-widest mb-1">Главная Статистика</h4>
+                                      <p className="text-sm font-bold text-blue-900">{mainStat}</p>
+                                 </div>
+                             )}
+
+                             {/* Functions List */}
+                             {functions && functions.length > 0 && (
+                                 <div className="mb-5">
+                                      <h4 className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Основные функции</h4>
+                                      <ul className="space-y-1.5">
+                                          {functions.map((fn, idx) => (
+                                              <li key={idx} className="text-xs text-slate-600 font-medium flex items-start gap-2">
+                                                  <div className="w-1 h-1 rounded-full bg-slate-400 mt-1.5 flex-shrink-0"></div>
+                                                  {fn}
+                                              </li>
+                                          ))}
+                                      </ul>
+                                 </div>
+                             )}
+
+                             {/* Signs of Trouble (Red Block) */}
+                             {troubleSigns && troubleSigns.length > 0 && (
+                                 <div className="mb-5 bg-red-50 p-4 rounded-xl border border-red-100">
+                                      <h4 className="text-[10px] uppercase font-black text-red-500 tracking-widest mb-3 flex items-center gap-1"><AlertTriangle size={12}/> Признаки проблем:</h4>
+                                      <ul className="space-y-1.5">
+                                          {troubleSigns.map((sign, idx) => (
+                                              <li key={idx} className="text-xs text-red-800 font-medium flex items-start gap-2">
+                                                  <div className="w-1 h-1 rounded-full bg-red-400 mt-1.5 flex-shrink-0"></div>
+                                                  {sign}
+                                              </li>
+                                          ))}
+                                      </ul>
+                                 </div>
+                             )}
+
+                             {/* Development Actions (Green Block) */}
+                             {developmentActions && developmentActions.length > 0 && (
+                                 <div className="mb-5 bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                                      <h4 className="text-[10px] uppercase font-black text-emerald-600 tracking-widest mb-3 flex items-center gap-1"><Zap size={12}/> Первоочередные действия:</h4>
+                                      <ul className="space-y-1.5">
+                                          {developmentActions.map((action, idx) => (
+                                              <li key={idx} className="text-xs text-emerald-800 font-medium flex items-start gap-2">
+                                                  <div className="w-1 h-1 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0"></div>
+                                                  {action}
+                                              </li>
+                                          ))}
+                                      </ul>
+                                 </div>
+                             )}
+
+                             {/* VFP Section */}
+                             {vfpText && (
+                                 <div className="mb-6">
+                                     <h4 className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 flex items-center gap-1"><Award size={10}/> Ценный Конечный Продукт (ЦКП)</h4>
+                                     <div className="bg-slate-50 border-l-4 border-slate-300 p-3 rounded-r-lg">
+                                         <p className="text-sm font-bold text-slate-700 italic">"{vfpText}"</p>
+                                     </div>
+                                 </div>
+                             )}
+
+                             {/* Manager Section */}
+                             <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
+                                 <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm">
+                                     <User size={20}/>
+                                 </div>
+                                 <div>
+                                     <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Ответственный руководитель</div>
+                                     <div className="text-sm font-bold text-slate-800">{managerName}</div>
+                                 </div>
+                             </div>
                         </div>
-                    </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
-                        {filteredList.length === 0 ? (
-                            <div className="h-64 flex flex-col items-center justify-center text-slate-400">
-                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                                    <Users size={24} className="opacity-50"/>
-                                </div>
-                                <p className="font-medium">Нет сотрудников</p>
+                        {/* EMPLOYEES LIST HEADER */}
+                        <div className="sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10 px-6 py-3 border-b border-slate-200 flex justify-between items-center">
+                            <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                <Users size={12}/> Сотрудники ({filteredList.length})
+                            </h4>
+                            <div className="relative w-40">
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" size={12}/>
+                                <input 
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    type="text" 
+                                    placeholder="Поиск..." 
+                                    className="w-full pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-300"
+                                />
                             </div>
-                        ) : (
-                            filteredList.map(emp => (
-                                <div 
-                                    key={emp.id} 
-                                    onClick={() => onSelectEmployee(emp)}
-                                    className="group bg-white rounded-2xl p-4 shadow-sm hover:shadow-lg border border-slate-100 hover:border-blue-100 transition-all cursor-pointer flex gap-4 items-center"
-                                >
-                                    <div className="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
-                                         {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-400"><User size={20}/></div>}
-                                    </div>
-                                    
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-slate-800 text-sm truncate">{emp.full_name}</div>
-                                        <div className="text-xs text-blue-600 truncate font-bold">{emp.position}</div>
-                                    </div>
+                        </div>
 
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={(e) => quickExportTxt(e, emp)} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500"><FileText size={14}/></button>
-                                        <button onClick={(e) => quickPrint(e, emp)} className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg text-slate-500"><Printer size={14}/></button>
-                                    </div>
+                        {/* EMPLOYEES MINI CARDS (NON-CLICKABLE) */}
+                        <div className="p-4 space-y-3 pb-20">
+                            {filteredList.length === 0 ? (
+                                <div className="h-32 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl mx-2">
+                                    <p className="font-medium text-xs">Нет сотрудников в этом отделе</p>
                                 </div>
-                            ))
-                        )}
+                            ) : (
+                                filteredList.map(emp => (
+                                    <div 
+                                        key={emp.id} 
+                                        className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex gap-4 items-start"
+                                    >
+                                        {/* Avatar */}
+                                        <div className="w-14 h-14 rounded-xl bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-100 shadow-sm relative">
+                                             {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-400"><User size={24}/></div>}
+                                             <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-black/20 to-transparent"></div>
+                                        </div>
+                                        
+                                        <div className="flex-1 min-w-0">
+                                            {/* Header */}
+                                            <div className="flex justify-between items-start mb-1">
+                                                <div>
+                                                    <div className="font-bold text-slate-800 text-sm leading-tight">{emp.full_name}</div>
+                                                    <div className="text-xs text-blue-600 font-bold mt-0.5">{emp.position}</div>
+                                                </div>
+                                                <button onClick={() => handleCopyAll(emp)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Скопировать все данные">
+                                                    {copiedId === `all-${emp.id}` ? <Check size={14} className="text-green-500"/> : <Copy size={14}/>}
+                                                </button>
+                                            </div>
+
+                                            {/* Details Grid */}
+                                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                
+                                                {/* NIK */}
+                                                <div className="bg-slate-50 rounded-lg px-2 py-1.5 flex items-center justify-between border border-slate-100 group">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <Hash size={10} className="text-slate-400 flex-shrink-0"/>
+                                                        <span className="text-xs text-slate-600 font-medium truncate">{emp.nickname || 'нет ника'}</span>
+                                                    </div>
+                                                    {emp.nickname && (
+                                                        <button onClick={() => handleCopy(emp.nickname || '', `nik-${emp.id}`)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
+                                                            {copiedId === `nik-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {/* PHONE */}
+                                                <div className="bg-slate-50 rounded-lg px-2 py-1.5 flex items-center justify-between border border-slate-100 group">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <Phone size={10} className="text-slate-400 flex-shrink-0"/>
+                                                        <span className="text-xs text-slate-600 font-medium truncate">{emp.phone || '-'}</span>
+                                                    </div>
+                                                    {emp.phone && (
+                                                        <button onClick={() => handleCopy(emp.phone || '', `ph-${emp.id}`)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
+                                                            {copiedId === `ph-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {/* TELEGRAM */}
+                                                <div className="bg-slate-50 rounded-lg px-2 py-1.5 flex items-center justify-between border border-slate-100 group sm:col-span-2">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <MessageCircle size={10} className="text-slate-400 flex-shrink-0"/>
+                                                        <span className="text-xs text-slate-600 font-medium truncate">{emp.telegram || '-'}</span>
+                                                    </div>
+                                                    {emp.telegram && (
+                                                        <button onClick={() => handleCopy(emp.telegram || '', `tg-${emp.id}`)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
+                                                            {copiedId === `tg-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
