@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { StatisticDefinition, StatisticValue, WiseCondition, Employee } from '../types';
 import { ORGANIZATION_STRUCTURE, HANDBOOK_STATISTICS } from '../constants';
 import StatsChart from './StatsChart';
-import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp } from 'lucide-react';
+import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface StatisticsTabProps {
@@ -102,6 +102,9 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   const [selectedStatForValues, setSelectedStatForValues] = useState<StatisticDefinition | null>(null);
   const [currentStatValues, setCurrentStatValues] = useState<StatisticValue[]>([]);
   const [editingValue, setEditingValue] = useState<Partial<StatisticValue>>({});
+  
+  // Import Ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetchDefinitions(); fetchAllValues(); }, [isOffline]); 
 
@@ -304,15 +307,225 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       setEditingValue({ definition_id: selectedStatForValues.id, date: new Date().toISOString().split('T')[0], value: 0, value2: 0 });
   };
 
+  // --- IMPORT / EXPORT LOGIC ---
+
+  const handleDownloadStatsCSV = () => {
+      // 1. Determine Visible Definitions based on filters
+      let visibleDefinitions = definitions.filter(def => {
+          if (!selectedDeptId) return true;
+          const parentId = getParentDeptId(def.owner_id || 'other');
+          return parentId === selectedDeptId;
+      });
+
+      // 2. SORT LOGIC
+      visibleDefinitions.sort((a, b) => {
+          const ownerA = a.owner_id || '';
+          const ownerB = b.owner_id || '';
+          const parentA = getParentDeptId(ownerA);
+          const parentB = getParentDeptId(ownerB);
+
+          // Compare Parent Departments first
+          const indexA = DEPT_ORDER.indexOf(parentA);
+          const indexB = DEPT_ORDER.indexOf(parentB);
+          
+          if (indexA !== indexB) {
+              // Handle unassigned/new departments at the end
+              if (indexA === -1) return 1;
+              if (indexB === -1) return -1;
+              return indexA - indexB;
+          }
+
+          // Same Parent Dept. Now check if one IS the parent
+          if (ownerA === parentA && ownerB !== parentB) return -1;
+          if (ownerB === parentB && ownerA !== parentA) return 1;
+
+          // Both are sub-departments (or same level). Sort by Code/Name if possible
+          // We can use the order of keys in departments object if we want strict schema order,
+          // otherwise alphabetical title is a good fallback.
+          return a.title.localeCompare(b.title);
+      });
+
+      // 3. Columns: Include ID and config for re-import capability
+      const headers = [
+          'ID', 'owner_id', 'Название', 'Владелец', 'Департамент', 
+          'calculation_method', 'inverted', 'is_double', 'is_favorite',
+          'Текущее Значение', 'Период', 'Изменение %', 'Тренд', 'Описание'
+      ];
+      
+      const rows = visibleDefinitions.map(def => {
+          const vals = getFilteredValues(def.id);
+          const { current, change, slope } = analyzeTrend(vals, def.inverted);
+          const percent = (change * 100).toFixed(1) + '%';
+          const trendDir = slope > 0 ? 'Рост' : (slope < 0 ? 'Падение' : 'Стабильно');
+          const ownerName = getOwnerName(def.owner_id || '');
+          const deptName = ORGANIZATION_STRUCTURE[getParentDeptId(def.owner_id || 'other')]?.name || '-';
+          const periodLabel = PERIODS.find(p => p.id === selectedPeriod)?.label || selectedPeriod;
+
+          return [
+              def.id,
+              def.owner_id || '',
+              `"${def.title.replace(/"/g, '""')}"`,
+              `"${ownerName.replace(/"/g, '""')}"`,
+              `"${deptName.replace(/"/g, '""')}"`,
+              `"${(def.calculation_method || '').replace(/"/g, '""')}"`,
+              def.inverted ? 'TRUE' : 'FALSE',
+              def.is_double ? 'TRUE' : 'FALSE',
+              def.is_favorite ? 'TRUE' : 'FALSE',
+              current,
+              periodLabel,
+              percent,
+              trendDir,
+              `"${(def.description || '').replace(/"/g, '""')}"`
+          ].join(',');
+      });
+
+      const csvContent = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `stats_export_${selectedDeptId || 'all'}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      a.click();
+  };
+
+  const handleImportClick = () => {
+      fileInputRef.current?.click();
+  };
+
+  const handleImportStatsCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          try {
+              const content = e.target?.result as string;
+              // Split lines, handling potential \r\n
+              const lines = content.split(/\r?\n/);
+              
+              // Simple parser - assumes CSV is valid from our export
+              // Headers should be: ID, owner_id, Название, ...
+              const headers = lines[0].split(',').map(h => h.trim());
+              
+              // Map indexes
+              const idIdx = headers.indexOf('ID');
+              const ownerIdIdx = headers.indexOf('owner_id');
+              const titleIdx = headers.indexOf('Название');
+              const calcIdx = headers.indexOf('calculation_method');
+              const invIdx = headers.indexOf('inverted');
+              const doubleIdx = headers.indexOf('is_double');
+              const favIdx = headers.indexOf('is_favorite');
+              const descIdx = headers.indexOf('Описание');
+
+              if (idIdx === -1 || titleIdx === -1 || ownerIdIdx === -1) {
+                  alert('Неверный формат CSV. Обязательны колонки ID, owner_id, Название. Используйте Экспорт для получения шаблона.');
+                  return;
+              }
+
+              let updatedCount = 0;
+              let createdCount = 0;
+              const updates = [];
+              const inserts = [];
+
+              for (let i = 1; i < lines.length; i++) {
+                  // Regex to split by comma but ignore commas inside quotes
+                  const row = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+                  if (!row) continue;
+                  
+                  // Clean quotes function
+                  const clean = (val: string) => val ? val.replace(/^"|"$/g, '').replace(/""/g, '"') : '';
+                  
+                  // Helper to safely get value by index mapping (row length might vary if parsed simply, 
+                  // but regex usually handles it. However, mapping to header index is safer)
+                  // Note: simple regex split returns array. 
+                  // Re-parsing properly:
+                  const values: string[] = [];
+                  let inQuote = false;
+                  let currentVal = '';
+                  // A robust CSV line parser needed or simple approach if structure is known
+                  // Let's use the simple approach of splitting considering the structure is controlled by us
+                  // OR stick to the regex array which matches tokens.
+                  
+                  // Since regex match returns array of values found, we can map them index-wise if order matches
+                  // CAUTION: The regex approach above might skip empty fields. 
+                  // Let's use a simpler split if we assume no commas in descriptions for now, OR better logic:
+                  
+                  // Better CSV Line Parser
+                  const parseLine = (text: string) => {
+                      const res = [];
+                      let cur = '';
+                      let inQ = false;
+                      for (let char of text) {
+                          if (char === '"') { inQ = !inQ; }
+                          else if (char === ',' && !inQ) { res.push(cur); cur = ''; }
+                          else { cur += char; }
+                      }
+                      res.push(cur);
+                      return res;
+                  };
+                  
+                  const cols = parseLine(lines[i]);
+                  if (cols.length < 3) continue;
+
+                  const statId = cols[idIdx]?.trim();
+                  const ownerId = cols[ownerIdIdx]?.trim();
+                  const title = clean(cols[titleIdx]?.trim());
+                  
+                  if (!title || !ownerId) continue;
+
+                  const defPayload = {
+                      title: title,
+                      owner_id: ownerId,
+                      calculation_method: clean(cols[calcIdx]?.trim() || ''),
+                      description: clean(cols[descIdx]?.trim() || ''),
+                      inverted: (cols[invIdx]?.trim().toUpperCase() === 'TRUE'),
+                      is_double: (cols[doubleIdx]?.trim().toUpperCase() === 'TRUE'),
+                      is_favorite: (cols[favIdx]?.trim().toUpperCase() === 'TRUE'),
+                      type: 'department' // Default
+                  };
+
+                  // Check if ID exists and is valid (not created by export logic if new)
+                  // If ID looks like a UUID or existing ID, update. If empty or new, insert.
+                  const isExisting = definitions.find(d => d.id === statId);
+
+                  if (isExisting) {
+                      updates.push({ ...defPayload, id: statId });
+                      updatedCount++;
+                  } else {
+                      inserts.push({ ...defPayload }); // Let DB generate ID or use provided if valid
+                      createdCount++;
+                  }
+              }
+
+              if (updates.length > 0 && supabase) {
+                  for (const up of updates) {
+                      await supabase.from('statistics_definitions').update(up).eq('id', up.id);
+                  }
+              }
+              if (inserts.length > 0 && supabase) {
+                  await supabase.from('statistics_definitions').insert(inserts);
+              }
+              
+              if (isOffline) {
+                   alert("В оффлайн режиме импорт симулирован. Обновите страницу.");
+              } else {
+                   alert(`Импорт завершен.\nОбновлено: ${updatedCount}\nСоздано: ${createdCount}`);
+                   fetchDefinitions();
+              }
+
+          } catch (err: any) {
+              console.error(err);
+              alert('Ошибка при чтении файла: ' + err.message);
+          }
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      };
+      reader.readAsText(file);
+  };
+
   // --- RENDER CARD (UPDATED COMPACT DESIGN) ---
   const renderStatCard = (stat: StatisticDefinition, deptColor: string) => {
       const vals = getFilteredValues(stat.id);
       const { current, change, slope } = analyzeTrend(vals, stat.inverted);
-      
-      // STRICT COLOR LOGIC:
-      // If trend line slope > 0 -> Green
-      // If trend line slope <= 0 -> Red
-      // Inverted: Slope > 0 -> Red, Slope <= 0 -> Green
       
       const isSlopeUp = slope > 0;
       let isGoodOutcome = isSlopeUp;
@@ -546,6 +759,22 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                     <button onClick={() => setDisplayMode('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${displayMode === 'dashboard' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}><LayoutDashboard size={16}/> Дашборд</button>
                     <button onClick={() => setDisplayMode('list')} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${displayMode === 'list' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}><List size={16}/> Список</button>
                 </div>
+                
+                <div className="flex gap-2">
+                    <button onClick={handleDownloadStatsCSV} className="px-4 py-2 bg-white text-emerald-700 border border-emerald-200 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-emerald-50 transition-all shadow-sm" title="Скачать список статистик в CSV">
+                        <Download size={16}/> <span className="hidden sm:inline">Экспорт CSV</span>
+                    </button>
+                    
+                    {isAdmin && (
+                        <>
+                            <button onClick={handleImportClick} className="px-4 py-2 bg-white text-blue-700 border border-blue-200 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-blue-50 transition-all shadow-sm" title="Импорт настроек статистик из CSV">
+                                <Upload size={16}/> <span className="hidden sm:inline">Импорт</span>
+                            </button>
+                            <input type="file" ref={fileInputRef} onChange={handleImportStatsCSV} className="hidden" accept=".csv"/>
+                        </>
+                    )}
+                </div>
+
                 {isAdmin && (
                     <button onClick={() => setIsEditMode(!isEditMode)} className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all border ${isEditMode ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-100' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{isEditMode ? <><X size={16}/> Завершить</> : <><Edit2 size={16}/> Конструктор</>}</button>
                 )}
