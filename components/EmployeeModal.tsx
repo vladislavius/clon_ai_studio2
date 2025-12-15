@@ -478,7 +478,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
 
   const removeAttachment = (id: string) => { setFormData(prev => ({ ...prev, attachments: prev.attachments.filter(a => a.id !== id) })); };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
     if(isUploading) return;
     onSave({ ...formData, updated_at: new Date().toISOString() });
@@ -506,6 +506,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
               <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors">{isReadOnly ? 'Закрыть' : 'Отмена'}</button>
               {!isReadOnly && (
                   <button 
+                    type="button" 
                     onClick={handleSubmit} 
                     disabled={isUploading}
                     className={`px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 flex items-center gap-2 transition-all ${isUploading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700 hover:-translate-y-0.5'}`}
@@ -685,7 +686,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                 <p className="text-slate-500 max-w-sm mx-auto mb-6 text-sm">
                                     Для управления статистикой и KPI необходимо сначала создать карточку сотрудника в базе данных.
                                 </p>
-                                <button onClick={handleSubmit} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2">
+                                <button type="button" onClick={handleSubmit} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2">
                                     <Save size={18} />
                                     Сохранить и продолжить
                                 </button>
