@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { StatisticValue } from '../types';
-import { format } from 'date-fns';
+import { format, subDays, addDays } from 'date-fns';
 
 interface StatsChartProps {
   values: StatisticValue[];
@@ -23,7 +23,7 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
     return (
       <div className="h-full w-full flex flex-col items-center justify-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Недостаточно данных</p>
-        <p className="text-[10px] text-slate-300 mt-1">Требуется минимум 2 значения</p>
+        <p className="text-[10px] text-slate-300 mt-1">Требуется минимум 2 значения (1 неделя)</p>
       </div>
     );
   }
@@ -55,6 +55,25 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
 
   const getY = (val: number) => {
     return SVG_HEIGHT - PADDING_Y - ((val - yMin) / yRange) * (SVG_HEIGHT - PADDING_Y * 2);
+  };
+
+  // --- HELPER: Get Fiscal Week String (Thu-Wed) ---
+  const getFiscalWeekString = (dateStr: string) => {
+      const d = new Date(dateStr);
+      const day = d.getDay(); // 0-Sun, 4-Thu
+      // If entered on Thu, it's the start. If entered Wed, it's the end.
+      // Usually entered at end of week. 
+      // Assumption: Date stored is the end of the week or any day within.
+      // Let's find the previous Thursday relative to this date
+      
+      const distToThu = (day + 7 - 4) % 7; 
+      const startOfWeek = new Date(d);
+      startOfWeek.setDate(d.getDate() - distToThu);
+      
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6); // Wednesday
+
+      return `${format(startOfWeek, 'dd.MM')} - ${format(endOfWeek, 'dd.MM')}`;
   };
 
   // --- TREND LINE CALCULATION (Linear Regression) ---
@@ -157,7 +176,7 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
                     }}
                 >
                     <div className="font-bold text-[9px] uppercase tracking-wider opacity-60 border-b border-slate-600 pb-1 mb-1 text-center">
-                        {format(new Date(point.date), 'd MMM yyyy')}
+                        Неделя: {getFiscalWeekString(point.date)}
                     </div>
                     <div className="flex justify-between gap-3 items-center">
                         <span className="opacity-80 font-medium">{isDouble ? 'Вал 1:' : 'Значение:'}</span>
@@ -275,10 +294,10 @@ const StatsChart: React.FC<StatsChartProps> = ({ values, color = "#3b82f6", inve
             {sortedValues.length > 1 && (
                 <>
                     <text x={PADDING_X} y={SVG_HEIGHT - 10} fontSize="10" fill="#64748b" fontWeight="600" textAnchor="start">
-                        {format(new Date(sortedValues[0].date), 'd MMM')}
+                        {format(new Date(sortedValues[0].date), 'dd.MM')}
                     </text>
                     <text x={SVG_WIDTH - PADDING_X} y={SVG_HEIGHT - 10} fontSize="10" fill="#64748b" fontWeight="600" textAnchor="end">
-                        {format(new Date(sortedValues[sortedValues.length - 1].date), 'd MMM')}
+                        {format(new Date(sortedValues[sortedValues.length - 1].date), 'dd.MM')}
                     </text>
                 </>
             )}

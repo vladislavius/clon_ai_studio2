@@ -36,7 +36,7 @@ DEMO_DEFINITIONS.forEach((def) => { let base = 100; if (def.title.includes('Вы
 const DEPT_ORDER = ['owner', 'dept7', 'dept1', 'dept2', 'dept3', 'dept4', 'dept5', 'dept6'];
 
 const PERIODS = [
-    { id: '1w', label: 'Неделя' },
+    { id: '1w', label: '1 Нед.' },
     { id: '3w', label: '3 Нед.' },
     { id: '1m', label: 'Месяц' },
     { id: '3m', label: '3 Мес.' },
@@ -223,28 +223,20 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       const vals = allLatestValues[statId] || [];
       if (!vals.length) return [];
       
-      const cutoffDate = new Date();
+      const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const total = sorted.length;
+
+      // Strict Point Slicing logic
       switch (selectedPeriod) {
-          case '1w': cutoffDate.setDate(cutoffDate.getDate() - 7); break;
-          case '3w': cutoffDate.setDate(cutoffDate.getDate() - 21); break;
-          case '1m': cutoffDate.setMonth(cutoffDate.getMonth() - 1); break;
-          case '3m': cutoffDate.setMonth(cutoffDate.getMonth() - 3); break;
-          case '6m': cutoffDate.setMonth(cutoffDate.getMonth() - 6); break;
-          case '1y': cutoffDate.setFullYear(cutoffDate.getFullYear() - 1); break;
-          case 'all': cutoffDate.setTime(0); break;
-          default: cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+          case '1w': return sorted.slice(Math.max(0, total - 2)); 
+          case '3w': return sorted.slice(Math.max(0, total - 4));
+          case '1m': return sorted.slice(Math.max(0, total - 5));
+          case '3m': return sorted.slice(Math.max(0, total - 13));
+          case '6m': return sorted.slice(Math.max(0, total - 26));
+          case '1y': return sorted.slice(Math.max(0, total - 52));
+          case 'all': return sorted;
+          default: return sorted.slice(Math.max(0, total - 13));
       }
-
-      if (selectedPeriod === 'all') return vals;
-
-      const cutoffString = format(cutoffDate, 'yyyy-MM-dd');
-      const filtered = vals.filter(v => v.date >= cutoffString);
-      
-      if (filtered.length < 2 && vals.length >= 2) {
-          const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-          return sorted.slice(-4); 
-      }
-      return filtered;
   };
 
   const getOwnerName = (ownerId: string) => {
@@ -437,21 +429,6 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                   
                   // Clean quotes function
                   const clean = (val: string) => val ? val.replace(/^"|"$/g, '').replace(/""/g, '"') : '';
-                  
-                  // Helper to safely get value by index mapping (row length might vary if parsed simply, 
-                  // but regex usually handles it. However, mapping to header index is safer)
-                  // Note: simple regex split returns array. 
-                  // Re-parsing properly:
-                  const values: string[] = [];
-                  let inQuote = false;
-                  let currentVal = '';
-                  // A robust CSV line parser needed or simple approach if structure is known
-                  // Let's use the simple approach of splitting considering the structure is controlled by us
-                  // OR stick to the regex array which matches tokens.
-                  
-                  // Since regex match returns array of values found, we can map them index-wise if order matches
-                  // CAUTION: The regex approach above might skip empty fields. 
-                  // Let's use a simpler split if we assume no commas in descriptions for now, OR better logic:
                   
                   // Better CSV Line Parser
                   const parseLine = (text: string) => {
