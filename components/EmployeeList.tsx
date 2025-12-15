@@ -43,6 +43,13 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
          return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s;
     }).join(', ') || '-';
 
+    // Format Emergency Contacts properly for TXT
+    const emergencyContactsText = (emp.emergency_contacts && emp.emergency_contacts.length > 0)
+        ? emp.emergency_contacts.map((c, i) => 
+            `   ${i+1}. ${c.name} (${c.relation})\n      Тел: ${c.phone}`
+          ).join('\n')
+        : "   Контакты не указаны";
+
     const lines = [
         "================================================================",
         "                   ЛИЧНОЕ ДЕЛО СОТРУДНИКА                       ",
@@ -91,11 +98,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
         `${pad('Валюта:')}${val(emp.crypto_currency)}`,
         "",
         "[ 7. ЭКСТРЕННЫЕ КОНТАКТЫ ]",
-        ...(emp.emergency_contacts && emp.emergency_contacts.length > 0 
-            ? emp.emergency_contacts.map((c, i) => 
-                `${i+1}. ${c.name} (${c.relation}) -> Тел: ${c.phone} ${c.telegram ? '| Tg: '+c.telegram : ''}`
-              )
-            : ["Контакты не указаны"]),
+        emergencyContactsText,
         "",
         "[ 8. ДОПОЛНИТЕЛЬНО ]",
         `${pad('Заметки:')}${val(emp.additional_info)}`,
@@ -103,7 +106,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
         "[ 9. КАСТОМНЫЕ ПОЛЯ ]",
         ...(emp.custom_fields && emp.custom_fields.length > 0
             ? emp.custom_fields.map(f => `${pad(f.label + ':')}${f.value}`)
-            : ["Нет дополнительных полей"]),
+            : ["   Нет дополнительных полей"]),
         "",
         "================================================================",
         "                  КОНЕЦ ФАЙЛА                                   ",
@@ -120,6 +123,18 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
 
   const quickPrint = (e: React.MouseEvent, emp: EmployeeType) => {
     e.stopPropagation();
+     
+     // Generate Emergency Contacts HTML
+     const emergencyHtml = emp.emergency_contacts && emp.emergency_contacts.length > 0
+        ? emp.emergency_contacts.map(c => `
+            <div class="emergency-card">
+                <div class="ec-name">${c.name}</div>
+                <div class="ec-role">${c.relation || 'Родственник'}</div>
+                <div class="ec-phone">${c.phone}</div>
+            </div>
+          `).join('')
+        : '<div style="font-size:11px; color:#94a3b8; font-style: italic;">Контакты не указаны</div>';
+
      const printContent = `
       <!DOCTYPE html>
       <html>
@@ -147,49 +162,53 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                 display: flex;
                 flex-direction: column;
             }
-            /* ... (Styles kept same as previous for brevity, purely visual print layout) ... */
-            .header { display: flex; gap: 25px; margin-bottom: 40px; align-items: flex-start; }
-            .photo { width: 120px; height: 120px; border-radius: 20px; object-fit: cover; background: #f1f5f9; }
-            .header-info h1 { font-size: 26px; font-weight: 900; text-transform: uppercase; margin: 0 0 5px 0; color: #0f172a; line-height: 1.1; }
-            .header-info h2 { font-size: 14px; font-weight: 700; color: #3b82f6; text-transform: uppercase; margin: 0 0 15px 0; }
-            .badges { display: flex; gap: 8px; }
-            .badge { background: #f1f5f9; color: #334155; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-            .badge.blue { background: #eff6ff; color: #1d4ed8; }
-            .container { display: grid; grid-template-columns: 240px 1fr; gap: 40px; }
+            .header { display: flex; gap: 25px; margin-bottom: 30px; align-items: flex-start; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; }
+            .photo { width: 120px; height: 120px; border-radius: 12px; object-fit: cover; background: #f1f5f9; border: 1px solid #e2e8f0; }
+            .header-info h1 { font-size: 24px; font-weight: 800; text-transform: uppercase; margin: 0 0 5px 0; color: #0f172a; line-height: 1.1; }
+            .header-info h2 { font-size: 14px; font-weight: 600; color: #3b82f6; text-transform: uppercase; margin: 0 0 15px 0; }
+            .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+            .badge { background: #f8fafc; color: #475569; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; border: 1px solid #e2e8f0; }
+            .container { display: grid; grid-template-columns: 240px 1fr; gap: 30px; }
             .sidebar { border-right: 1px solid #e2e8f0; padding-right: 20px; }
-            .section { margin-bottom: 30px; }
-            .section-title { font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; }
-            .contact-item { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 13px; color: #334155; font-weight: 500; }
-            .contact-icon { width: 24px; height: 24px; background: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #64748b; }
-            .address-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-            .address-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
-            .address-val { font-size: 12px; color: #334155; line-height: 1.4; }
-            .emergency-card { background: #fff1f2; border-left: 3px solid #fecaca; padding: 10px; border-radius: 0 6px 6px 0; margin-bottom: 8px; }
-            .ec-name { color: #be123c; font-weight: 700; font-size: 12px; }
-            .ec-role { color: #e11d48; font-size: 10px; margin-bottom: 2px; }
-            .ec-phone { color: #be123c; font-size: 12px; font-weight: 500; }
-            .grid-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 15px; }
-            .label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; display: block; }
-            .value { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.3; }
-            .mono-bg { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-            .passport-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; background: #fff; }
-            .finance-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f8fafc; font-size: 12px; }
+            .section { margin-bottom: 25px; }
+            .section-title { font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 2px; }
+            
+            .contact-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; color: #334155; font-weight: 500; }
+            .contact-icon { width: 20px; height: 20px; background: #f1f5f9; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #64748b; }
+            
+            .address-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+            .address-label { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 2px; }
+            .address-val { font-size: 11px; color: #334155; line-height: 1.3; }
+            
+            .emergency-card { background: #fff1f2; border-left: 3px solid #fecaca; padding: 8px; border-radius: 0 4px 4px 0; margin-bottom: 6px; }
+            .ec-name { color: #9f1239; font-weight: 700; font-size: 11px; }
+            .ec-role { color: #be123c; font-size: 9px; margin-bottom: 2px; }
+            .ec-phone { color: #881337; font-size: 11px; font-weight: 600; }
+            
+            .grid-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 12px; }
+            .label { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 2px; display: block; }
+            .value { font-size: 12px; font-weight: 600; color: #0f172a; line-height: 1.3; }
+            .mono-bg { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+            
+            .passport-box { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #fff; margin-bottom: 8px; }
+            .finance-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f8fafc; font-size: 11px; }
             .finance-label { color: #64748b; font-weight: 600; }
             .finance-val { color: #0f172a; font-weight: 600; text-align: right; }
-            .footer { margin-top: auto; text-align: right; font-size: 9px; color: #94a3b8; padding-top: 20px; border-top: 1px solid #f1f5f9; }
+            
+            .footer { margin-top: auto; text-align: right; font-size: 9px; color: #cbd5e1; padding-top: 15px; border-top: 1px solid #f1f5f9; }
           </style>
         </head>
         <body>
           <div class="page">
              <div class="header">
-                 <img src="${emp.photo_url || 'https://via.placeholder.com/150'}" class="photo" />
+                 <img src="${emp.photo_url || ''}" class="photo" onerror="this.src='https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b'" />
                  <div class="header-info">
                      <h1>${emp.full_name}</h1>
                      <h2>${emp.position || 'Должность не указана'}</h2>
                      <div class="badges">
-                        <span class="badge blue">ID: ${emp.id.substring(0,8)}</span>
+                        <span class="badge">ID: ${emp.id.substring(0,8)}</span>
                         ${emp.nickname ? `<span class="badge">NIK: ${emp.nickname}</span>` : ''}
-                        <span class="badge">Joined: ${emp.join_date || '-'}</span>
+                        <span class="badge">Принят: ${emp.join_date || '-'}</span>
                      </div>
                  </div>
              </div>
@@ -205,7 +224,7 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                     <div class="section">
                         <div class="section-title">RESIDENCE</div>
                         <div class="address-box">
-                            <div class="address-label">ACTUAL ADDRESS</div>
+                            <div class="address-label">ACTUAL</div>
                             <div class="address-val">${emp.actual_address || '-'}</div>
                         </div>
                         <div class="address-box">
@@ -214,9 +233,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                         </div>
                     </div>
                     <div class="section">
-                        <div class="section-title">EMERGENCY</div>
-                         ${emp.emergency_contacts && emp.emergency_contacts.length > 0 ? 
-                            emp.emergency_contacts.map(c => `<div class="emergency-card"><div class="ec-name">${c.name}</div><div class="ec-role">${c.relation}</div><div class="ec-phone">${c.phone}</div></div>`).join('') : '<div style="font-size:11px; color:#94a3b8">Нет контактов</div>'}
+                        <div class="section-title">EMERGENCY CONTACTS</div>
+                        ${emergencyHtml}
                     </div>
                 </div>
                 <div class="main">
@@ -236,19 +254,21 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                                 <div><span class="label">SERIES & NUMBER</span><div class="value"><span class="mono-bg">${emp.passport_number || '-'}</span></div></div>
                                 <div><span class="label">DATE OF ISSUE</span><div class="value">${emp.passport_date || '-'}</div></div>
                             </div>
-                            <div style="margin-top: 15px;"><span class="label">ISSUED BY</span><div class="value">${emp.passport_issuer || '-'}</div></div>
+                            <div style="margin-top: 10px;"><span class="label">ISSUED BY</span><div class="value">${emp.passport_issuer || '-'}</div></div>
                         </div>
                     </div>
-                    ${emp.foreign_passport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${emp.foreign_passport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${emp.foreign_passport_date || '-'}</div></div></div><div style="margin-top: 15px;"><span class="label">AUTHORITY</span><div class="value">${emp.foreign_passport_issuer || '-'}</div></div></div></div>` : ''}
+                    ${emp.foreign_passport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${emp.foreign_passport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${emp.foreign_passport_date || '-'}</div></div></div><div style="margin-top: 10px;"><span class="label">AUTHORITY</span><div class="value">${emp.foreign_passport_issuer || '-'}</div></div></div></div>` : ''}
                     <div class="section">
                         <div class="section-title">FINANCE</div>
                         <div class="finance-row"><span class="finance-label">Bank Name</span><span class="finance-val">${emp.bank_name || 'Не указан'}</span></div>
                         <div class="finance-row"><span class="finance-label">Account / Card</span><span class="finance-val">${emp.bank_details || '-'}</span></div>
                          <div class="finance-row"><span class="finance-label">Crypto Wallet (${emp.crypto_network || 'NET'})</span><span class="finance-val">${emp.crypto_wallet || '-'}</span></div>
                     </div>
+                    
+                    ${emp.additional_info ? `<div class="section"><div class="section-title">NOTES</div><div style="font-size:11px; color:#334155; line-height:1.5; border-left:2px solid #e2e8f0; padding-left:10px;">${emp.additional_info}</div></div>` : ''}
                 </div>
              </div>
-             <div class="footer">CONFIDENTIAL PERSONNEL RECORD • Generated on ${format(new Date(), 'dd.MM.yyyy')}</div>
+             <div class="footer">CONFIDENTIAL PERSONNEL RECORD • HR SYSTEM PRO • ${format(new Date(), 'dd.MM.yyyy')}</div>
           </div>
           <script>window.onload = () => { setTimeout(() => window.print(), 500); };</script>
         </body>
@@ -313,7 +333,12 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
               <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-md">
                  <div className="w-full h-full rounded-2xl overflow-hidden bg-gray-100 relative">
                     {emp.photo_url ? (
-                      <img src={emp.photo_url} alt={emp.full_name} className="w-full h-full object-cover" />
+                      <img 
+                        src={emp.photo_url} 
+                        alt={emp.full_name} 
+                        className="w-full h-full object-cover" 
+                        onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-gray-300"><User size={40} /></div>
                     )}

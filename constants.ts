@@ -1,6 +1,13 @@
 
 import { Department, WiseCondition } from './types';
 
+// --- SECURITY CONFIGURATION ---
+// Список Email-адресов, которые имеют права АДМИНИСТРАТОРА (полный доступ)
+// Добавляйте сюда почты через запятую: ['boss@gmail.com', 'hr@gmail.com']
+export const ADMIN_EMAILS = [
+    'hrtisland@gmail.com'
+];
+
 export const WISE_CONDITIONS: Record<WiseCondition, { label: string, color: string, bg: string }> = {
   'non_existence': { label: 'Несуществование', color: '#94a3b8', bg: '#f1f5f9' },
   'danger': { label: 'Опасность', color: '#ef4444', bg: '#fef2f2' },

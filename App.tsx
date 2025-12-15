@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Briefcase, Cake, FileDown, Plus, Search, Menu, LayoutGrid, Database, Settings as SettingsIcon, Loader2, LogOut, TrendingUp, WifiOff, Network, List, ChevronLeft, ChevronRight, X, Shield, Edit3 } from 'lucide-react';
+import { Users, Briefcase, Cake, FileDown, Plus, Search, Menu, LayoutGrid, Database, Settings as SettingsIcon, Loader2, LogOut, TrendingUp, WifiOff, Network, List, ChevronLeft, ChevronRight, X, Shield, Edit3, Lock, Filter } from 'lucide-react';
 import EmployeeList from './components/EmployeeList';
 import EmployeeModal from './components/EmployeeModal';
 import Birthdays from './components/Birthdays';
@@ -8,7 +8,7 @@ import Settings from './components/Settings'; // New Import
 import StatisticsTab from './components/StatisticsTab';
 import OrgChart from './components/OrgChart';
 import Auth from './components/Auth';
-import { ORGANIZATION_STRUCTURE } from './constants';
+import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS } from './constants';
 import { Employee, ViewMode, Attachment } from './types';
 import { supabase } from './supabaseClient';
 
@@ -65,6 +65,10 @@ const DEMO_EMPLOYEES: Employee[] = [
   }
 ];
 
+// --- SORT ORDER CONSTANT ---
+// Order: Owner -> 7 (Admin) -> 1 -> 2 -> 3 -> 4 -> 5 -> 6
+const DEPT_SORT_ORDER = ['owner', 'dept7', 'dept1', 'dept2', 'dept3', 'dept4', 'dept5', 'dept6'];
+
 function App() {
   const [session, setSession] = useState<any>(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -77,6 +81,7 @@ function App() {
   const [currentView, setCurrentView] = useState<ViewMode>('org_chart'); 
   const [employeeSubView, setEmployeeSubView] = useState<'list' | 'birthdays'>('list'); // Removed 'data'
   const [searchTerm, setSearchTerm] = useState('');
+  const [deptFilter, setDeptFilter] = useState('all'); // New: Department Filter State
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
   
   // Sidebar State
@@ -87,7 +92,8 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
-  const isAdmin = isOffline || session?.user?.email === 'hrtisland@gmail.com';
+  // UPDATED: Admin check uses the global list from constants.ts
+  const isAdmin = isOffline || (session?.user?.email && ADMIN_EMAILS.includes(session.user.email));
 
   useEffect(() => {
     if (isOffline) {
@@ -116,7 +122,8 @@ function App() {
 
   const handleBypassAuth = () => {
       setIsOffline(true);
-      setSession({ user: { email: 'staff@hrtisland.com' } });
+      // Offline mode uses the primary admin email
+      setSession({ user: { email: ADMIN_EMAILS[0] } });
       setEmployees(DEMO_EMPLOYEES);
       setAuthChecking(false);
   };
@@ -128,16 +135,26 @@ function App() {
     try {
       const { data: employeesData, error: employeesError } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
       if (employeesError) throw employeesError;
-      const { data: attachmentsData } = await supabase.from('employee_attachments').select('*');
+      
+      // SAFE ATTACHMENT FETCHING (Prevents crash if table missing)
+      let attachmentsData: any[] = [];
+      try {
+          const { data: att, error: attError } = await supabase.from('employee_attachments').select('*');
+          if (!attError && att) attachmentsData = att;
+      } catch (err) {
+          console.warn("Could not fetch attachments, continuing without them.", err);
+      }
+
       if (employeesData) {
         const mergedEmployees = employeesData.map((emp: any) => ({
           ...emp,
-          attachments: attachmentsData ? attachmentsData.filter((att: any) => att.employee_id === emp.id) : []
+          attachments: attachmentsData.filter((att: any) => att.employee_id === emp.id)
         }));
         setEmployees(mergedEmployees as Employee[]);
       }
     } catch (error: any) {
       console.error('Error fetching employees:', error);
+      alert('Ошибка загрузки сотрудников: ' + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -150,13 +167,41 @@ function App() {
       setSession(null);
   };
 
-  const filteredEmployees = employees.filter(emp => {
-    const matchesSearch = emp.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          emp.position.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+  // --- FILTERING & SORTING LOGIC ---
+  const filteredEmployees = employees
+    .filter(emp => {
+        // 1. Search Filter
+        const matchesSearch = emp.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                              emp.position.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        // 2. Department Filter
+        const matchesDept = deptFilter === 'all' || emp.department?.includes(deptFilter);
+        
+        return matchesSearch && matchesDept;
+    })
+    .sort((a, b) => {
+        // 3. Sort by Department Hierarchy
+        const deptA = a.department?.[0] || 'other';
+        const deptB = b.department?.[0] || 'other';
+
+        const indexA = DEPT_SORT_ORDER.indexOf(deptA);
+        const indexB = DEPT_SORT_ORDER.indexOf(deptB);
+        
+        // Handle cases where dept might not be in the list (put them at end)
+        const safeIndexA = indexA === -1 ? 999 : indexA;
+        const safeIndexB = indexB === -1 ? 999 : indexB;
+
+        if (safeIndexA !== safeIndexB) {
+            return safeIndexA - safeIndexB;
+        }
+
+        // Secondary Sort: Name
+        return a.full_name.localeCompare(b.full_name);
+    });
 
   const handleSaveEmployee = async (emp: Employee) => {
+    if (!isAdmin) return; // Double check
+
     if (isOffline) {
         setEmployees(prev => {
             const exists = prev.find(e => e.id === emp.id);
@@ -167,18 +212,44 @@ function App() {
         return;
     }
     if (!supabase) return;
+    
+    // Ensure we don't send attachments array to 'employees' table directly if Supabase is strict, 
+    // but usually extra fields are ignored or handled. Ideally separate them.
     const { attachments, ...employeeData } = emp;
+    
     try {
         const { error: empError } = await supabase.from('employees').upsert(employeeData);
         if (empError) throw empError;
-        if (attachments) {
-            const { data: existingDocs } = await supabase.from('employee_attachments').select('id').eq('employee_id', emp.id);
-            const existingIds = existingDocs?.map(d => d.id) || [];
-            const newIds = attachments.map(a => a.id);
-            const idsToDelete = existingIds.filter(id => !newIds.includes(id));
-            if (idsToDelete.length > 0) await supabase.from('employee_attachments').delete().in('id', idsToDelete);
-            const attachmentsToUpsert = attachments.map(a => ({ ...a, employee_id: emp.id }));
-            if (attachmentsToUpsert.length > 0) await supabase.from('employee_attachments').upsert(attachmentsToUpsert);
+        
+        if (attachments && attachments.length > 0) {
+            try {
+                // Check if table exists/accessible by trying a select
+                // Then perform logic
+                const { data: existingDocs } = await supabase.from('employee_attachments').select('id').eq('employee_id', emp.id);
+                const existingIds = existingDocs?.map(d => d.id) || [];
+                const newIds = attachments.map(a => a.id);
+                const idsToDelete = existingIds.filter(id => !newIds.includes(id));
+                
+                if (idsToDelete.length > 0) await supabase.from('employee_attachments').delete().in('id', idsToDelete);
+                
+                // Only upsert ones that have all required fields (basic check)
+                const attachmentsToUpsert = attachments
+                    .filter(a => a.file_name && a.public_url)
+                    .map(a => ({ 
+                        id: a.id,
+                        employee_id: emp.id,
+                        file_name: a.file_name,
+                        file_type: a.file_type,
+                        file_size: a.file_size,
+                        storage_path: a.storage_path,
+                        public_url: a.public_url,
+                        uploaded_at: a.uploaded_at
+                    }));
+                
+                if (attachmentsToUpsert.length > 0) await supabase.from('employee_attachments').upsert(attachmentsToUpsert);
+            } catch (attErr) {
+                console.warn("Attachment saving failed (table missing?), skipping.", attErr);
+            }
         }
         await fetchEmployees();
         setIsModalOpen(false); setEditingEmployee(null);
@@ -188,6 +259,7 @@ function App() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
+    if (!isAdmin) return;
     if (!confirm('Are you sure you want to delete this employee?')) return;
     if (isOffline) { setEmployees(prev => prev.filter(e => e.id !== id)); return; }
     if (!supabase) return;
@@ -199,14 +271,18 @@ function App() {
   };
 
   const handleEditClick = (emp: Employee) => { 
-      if (!isAdmin) return;
       setEditingEmployee(emp); 
       setIsModalOpen(true); 
   };
   
-  const handleAddClick = () => { setEditingEmployee(null); setIsModalOpen(true); };
+  const handleAddClick = () => { 
+      if (!isAdmin) return;
+      setEditingEmployee(null); 
+      setIsModalOpen(true); 
+  };
   
   const handleImportData = async (data: Employee[]) => {
+      if (!isAdmin) return;
       if (isOffline) {
           setEmployees(data);
           return;
@@ -247,7 +323,7 @@ function App() {
              <div className={`transition-opacity duration-200 ${isSidebarCollapsed ? 'opacity-0 w-0 hidden md:block' : 'opacity-100'}`}>
                   <h1 className="font-bold text-lg text-slate-800 whitespace-nowrap">HR System</h1>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ml-1 ${isAdmin ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                      {isAdmin ? 'ADMIN' : 'STAFF'}
+                      {isAdmin ? 'ADMIN' : 'USER'}
                   </span>
              </div>
           </div>
@@ -310,7 +386,7 @@ function App() {
         </nav>
 
         <div className="p-4 border-t border-gray-100 space-y-4">
-            {!isSidebarCollapsed && (
+            {!isSidebarCollapsed && isAdmin && (
               <div className="bg-slate-50 rounded-xl p-4 text-center animate-in fade-in">
                 <p className="text-xs text-slate-500 mb-1">Сотрудников</p>
                 <p className="text-2xl font-bold text-slate-800">{isLoading ? '...' : employees.length}</p>
@@ -330,12 +406,12 @@ function App() {
           <div className="flex items-center gap-4 flex-1">
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100"><Menu size={24} /></button>
             
-            {/* SEARCH BAR */}
-            {currentView === 'employees' && employeeSubView === 'list' && (
-              <div className="relative w-full max-w-xs md:max-w-md animate-in fade-in slide-in-from-left-2">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input type="text" placeholder="Поиск..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-xl outline-none transition-all text-sm md:text-base"/>
-              </div>
+            {/* SEARCH BAR (Global) */}
+            {currentView !== 'settings' && (
+                <div className="relative w-full max-w-xs md:max-w-md animate-in fade-in slide-in-from-left-2">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input type="text" placeholder="Поиск по имени или должности..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-xl outline-none transition-all text-sm md:text-base"/>
+                </div>
             )}
 
             {/* ADMIN QUICK TOOLBAR */}
@@ -359,8 +435,8 @@ function App() {
                      <p className="text-xs font-bold text-slate-800">{session?.user?.email}</p>
                      <p className="text-[10px] text-slate-400 font-medium">Текущая сессия</p>
                  </div>
-                 <div className="w-9 h-9 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold border-2 border-white shadow-sm">
-                     <Shield size={16}/>
+                 <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold border-2 border-white shadow-sm ${isAdmin ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                     {isAdmin ? <Shield size={16}/> : <Lock size={16}/>}
                  </div>
              </div>
           </div>
@@ -378,9 +454,35 @@ function App() {
 
               {currentView === 'employees' && isAdmin && (
                 <div className="flex flex-col h-full">
-                  <div className="flex border-b border-slate-200 mb-6 overflow-x-auto">
-                    <button onClick={() => setEmployeeSubView('list')} className={`px-4 md:px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${employeeSubView === 'list' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}><List size={16}/> Справочник</button>
-                    <button onClick={() => setEmployeeSubView('birthdays')} className={`px-4 md:px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${employeeSubView === 'birthdays' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}><Cake size={16}/> Дни Рождения</button>
+                  <div className="flex flex-col md:flex-row justify-between md:items-end mb-6 gap-4">
+                      {/* Tabs */}
+                      <div className="flex border-b border-slate-200 overflow-x-auto">
+                        <button onClick={() => setEmployeeSubView('list')} className={`px-4 md:px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${employeeSubView === 'list' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}><List size={16}/> Справочник</button>
+                        <button onClick={() => setEmployeeSubView('birthdays')} className={`px-4 md:px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${employeeSubView === 'birthdays' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}><Cake size={16}/> Дни Рождения</button>
+                      </div>
+
+                      {/* NEW: Department Filter for List View */}
+                      {employeeSubView === 'list' && (
+                        <div className="flex items-center gap-2 animate-in fade-in">
+                            <div className="relative">
+                                <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                                <select 
+                                    value={deptFilter} 
+                                    onChange={(e) => setDeptFilter(e.target.value)}
+                                    className="pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer shadow-sm hover:border-blue-300 transition-colors"
+                                >
+                                    <option value="all">Все департаменты</option>
+                                    <option disabled>──────────</option>
+                                    {DEPT_SORT_ORDER.map(deptId => {
+                                        const dept = ORGANIZATION_STRUCTURE[deptId];
+                                        if(!dept) return null;
+                                        return <option key={deptId} value={deptId}>{dept.name}</option>
+                                    })}
+                                </select>
+                                <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" />
+                            </div>
+                        </div>
+                      )}
                   </div>
 
                   <div className="flex-1 overflow-y-auto custom-scrollbar pb-20">
@@ -389,7 +491,10 @@ function App() {
                         <div className="flex justify-between items-end mb-6">
                           <div>
                             <h2 className="text-xl md:text-2xl font-bold text-slate-800">Справочник сотрудников</h2>
-                            <p className="text-slate-500 mt-1 text-sm">Всего {filteredEmployees.length} записей</p>
+                            <p className="text-slate-500 mt-1 text-sm">
+                                Всего {filteredEmployees.length} записей
+                                {deptFilter !== 'all' && <span className="ml-1 text-blue-600 font-medium">(Фильтр: {ORGANIZATION_STRUCTURE[deptFilter]?.name})</span>}
+                            </p>
                           </div>
                         </div>
                         <EmployeeList employees={filteredEmployees} onEdit={handleEditClick} onDelete={handleDeleteEmployee} />
@@ -411,6 +516,7 @@ function App() {
 
       <EmployeeModal 
         isOpen={isModalOpen}
+        isReadOnly={!isAdmin}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveEmployee}
         initialData={editingEmployee}

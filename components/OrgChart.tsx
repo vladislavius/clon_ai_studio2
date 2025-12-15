@@ -394,7 +394,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                             </div>
                         </div>
 
-                        {/* EMPLOYEES MINI CARDS (NON-CLICKABLE) */}
+                        {/* EMPLOYEES MINI CARDS (NOW CLICKABLE FOR EVERYONE) */}
                         <div className="p-4 space-y-3 pb-20">
                             {filteredList.length === 0 ? (
                                 <div className="h-32 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl mx-2">
@@ -403,12 +403,22 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                             ) : (
                                 filteredList.map(emp => (
                                     <div 
-                                        key={emp.id} 
-                                        className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex gap-4 items-start"
+                                        key={emp.id}
+                                        onClick={() => onSelectEmployee(emp)} 
+                                        className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex gap-4 items-start cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group/card"
                                     >
                                         {/* Avatar */}
                                         <div className="w-14 h-14 rounded-xl bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-100 shadow-sm relative">
-                                             {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-400"><User size={24}/></div>}
+                                             {emp.photo_url ? (
+                                                <img 
+                                                    src={emp.photo_url} 
+                                                    className="w-full h-full object-cover" 
+                                                    onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
+                                                    // Standard error fallback logic handled by browser or parent if src fails
+                                                /> 
+                                             ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-slate-400"><User size={24}/></div>
+                                             )}
                                              <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-black/20 to-transparent"></div>
                                         </div>
                                         
@@ -416,10 +426,14 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                                             {/* Header */}
                                             <div className="flex justify-between items-start mb-1">
                                                 <div>
-                                                    <div className="font-bold text-slate-800 text-sm leading-tight">{emp.full_name}</div>
+                                                    <div className="font-bold text-slate-800 text-sm leading-tight group-hover/card:text-blue-600 transition-colors">{emp.full_name}</div>
                                                     <div className="text-xs text-blue-600 font-bold mt-0.5">{emp.position}</div>
                                                 </div>
-                                                <button onClick={() => handleCopyAll(emp)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Скопировать все данные">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); handleCopyAll(emp); }} 
+                                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                                                    title="Скопировать данные"
+                                                >
                                                     {copiedId === `all-${emp.id}` ? <Check size={14} className="text-green-500"/> : <Copy size={14}/>}
                                                 </button>
                                             </div>
@@ -434,7 +448,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                                                         <span className="text-xs text-slate-600 font-medium truncate">{emp.nickname || 'нет ника'}</span>
                                                     </div>
                                                     {emp.nickname && (
-                                                        <button onClick={() => handleCopy(emp.nickname || '', `nik-${emp.id}`)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.nickname || '', `nik-${emp.id}`); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
                                                             {copiedId === `nik-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}
                                                         </button>
                                                     )}
@@ -447,7 +461,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                                                         <span className="text-xs text-slate-600 font-medium truncate">{emp.phone || '-'}</span>
                                                     </div>
                                                     {emp.phone && (
-                                                        <button onClick={() => handleCopy(emp.phone || '', `ph-${emp.id}`)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.phone || '', `ph-${emp.id}`); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
                                                             {copiedId === `ph-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}
                                                         </button>
                                                     )}
@@ -460,7 +474,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, onSelectEmployee }) => {
                                                         <span className="text-xs text-slate-600 font-medium truncate">{emp.telegram || '-'}</span>
                                                     </div>
                                                     {emp.telegram && (
-                                                        <button onClick={() => handleCopy(emp.telegram || '', `tg-${emp.id}`)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.telegram || '', `tg-${emp.id}`); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">
                                                             {copiedId === `tg-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}
                                                         </button>
                                                     )}
