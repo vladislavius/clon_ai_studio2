@@ -116,7 +116,7 @@ function App() {
 
   const handleBypassAuth = () => {
       setIsOffline(true);
-      setSession({ user: { email: 'hrtisland@gmail.com' } });
+      setSession({ user: { email: 'staff@hrtisland.com' } });
       setEmployees(DEMO_EMPLOYEES);
       setAuthChecking(false);
   };
