@@ -493,11 +493,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-0 md:p-4">
       <div className="bg-white rounded-none md:rounded-3xl shadow-2xl w-full max-w-6xl h-full md:h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
         
-        {/* Header */}
-        <div className="flex justify-between items-center px-4 md:px-8 py-4 md:py-5 border-b border-gray-100 bg-white flex-shrink-0">
-          <div className="min-w-0">
-              <h2 className="text-xl md:text-2xl font-bold text-slate-800 truncate">{isReadOnly ? 'Просмотр Сотрудника' : (initialData ? 'Редактирование' : 'Новый Сотрудник')}</h2>
-              <div className="flex items-center gap-2 text-sm text-slate-500 mt-0.5 hidden sm:flex">
+        {/* Header (Mobile Adapted) */}
+        <div className="flex justify-between items-center px-4 md:px-8 py-3 md:py-5 border-b border-gray-100 bg-white flex-shrink-0">
+          <div className="min-w-0 pr-2">
+              <h2 className="text-lg md:text-2xl font-bold text-slate-800 truncate leading-tight">{isReadOnly ? 'Сотрудник' : (initialData ? 'Редактирование' : 'Новый')}</h2>
+              <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 md:hidden">
+                  <span>{formData.id.substring(0,6)}...</span>
+              </div>
+              <div className="items-center gap-2 text-sm text-slate-500 mt-0.5 hidden md:flex">
                   <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-mono text-slate-600">{formData.id.substring(0,8)}</span>
                   <span>• Личное дело {isReadOnly && '(Только чтение)'}</span>
               </div>
@@ -509,10 +512,10 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                     type="button"
                     onClick={handleSubmit} 
                     disabled={isUploading}
-                    className={`px-4 md:px-6 py-2 md:py-2.5 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 flex items-center gap-2 transition-all ${isUploading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700 hover:-translate-y-0.5'}`}
+                    className={`px-3 md:px-6 py-2 md:py-2.5 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 flex items-center gap-2 transition-all ${isUploading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700 hover:-translate-y-0.5'}`}
                   >
                     {isUploading ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />} 
-                    <span className="hidden sm:inline">Сохранить</span>
+                    <span className="hidden md:inline">Сохранить</span>
                   </button>
               )}
           </div>
@@ -520,8 +523,8 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
 
         {/* Layout */}
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden bg-slate-50/50">
-            {/* Sidebar Navigation */}
-            <div className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-slate-200 p-2 md:p-4 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)] z-10 custom-scrollbar flex-shrink-0">
+            {/* Sidebar Navigation (Mobile Sticky Tab Bar) */}
+            <div className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-r border-slate-200 p-2 md:p-4 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto shadow-[0_4px_12px_-6px_rgba(0,0,0,0.1)] md:shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)] z-10 custom-scrollbar flex-shrink-0 sticky top-0">
                 {[
                     { id: 'general', label: '1. Основное' },
                     { id: 'contacts', label: '2. Контакты' },
@@ -557,11 +560,11 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                 <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2"><div className="w-1.5 h-6 bg-blue-500 rounded-full"></div> Личные Данные</h3>
                                 <div className="bg-white p-4 md:p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                                     <div className="md:col-span-2 flex justify-center mb-4">
-                                        <div className="w-32 h-32 rounded-full border-4 border-slate-100 shadow-lg overflow-hidden bg-slate-200 relative group">
+                                        <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-slate-100 shadow-lg overflow-hidden bg-slate-200 relative group">
                                             {formData.photo_url ? (
                                                 <img src={formData.photo_url} alt="Avatar" className="w-full h-full object-cover" onError={(e) => { if (e.currentTarget.src.startsWith('https://ui-avatars.com')) return; e.currentTarget.src = `https://ui-avatars.com/api/?name=${formData.full_name}&background=f1f5f9&color=64748b`; }}/>
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100"><User size={40}/></div>
+                                                <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100"><User size={32}/></div>
                                             )}
                                             <button type="button" onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><Upload size={24} /></button>
                                             <input type="file" ref={fileInputRef} onChange={(e) => handleFileUpload(e, true)} className="hidden" accept="image/*" />
@@ -571,7 +574,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                     <div><label className={labelClass}>Должность</label><input name="position" value={formData.position} onChange={handleChange} className={inputClass} /></div>
                                     <div><label className={labelClass}>Дата Рождения</label><input type="date" name="birth_date" value={formData.birth_date || ''} onChange={handleChange} className={inputClass} /></div>
                                     <div><label className={labelClass}>Дата Приема</label><input type="date" name="join_date" value={formData.join_date || ''} onChange={handleChange} className={inputClass} /></div>
-                                    <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                                          <div><label className={labelClass}>Системный NIK</label><input name="nickname" value={formData.nickname || ''} onChange={handleChange} className={inputClass} placeholder="ivan_hr" /></div>
                                          <div><label className={labelClass}>Telegram (Username)</label><input name="telegram" value={formData.telegram || ''} onChange={handleChange} className={inputClass} placeholder="@username" /></div>
                                     </div>
@@ -891,37 +894,20 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                                         <div className="text-[10px] text-slate-400 font-medium">Посл: {vals.length > 0 ? format(new Date(vals[vals.length-1].date), 'dd.MM') : '-'}</div>
                                                     </div>
                                                     
-                                                    <div className="flex flex-wrap items-end gap-2 w-full">
-                                                        <div className="relative flex-shrink-0">
-                                                            <label className="block text-[8px] font-bold text-slate-400 mb-1 uppercase">Дата (Чт)</label>
-                                                            <input type="date" value={newStatDate} onChange={e => setNewStatDate(e.target.value)} className="h-9 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-700 focus:border-blue-300 outline-none w-28" />
-                                                        </div>
-                                                        
-                                                        <div className="flex-1 min-w-[80px]">
-                                                             <label className="block text-[8px] font-bold text-slate-400 mb-1 uppercase">Значение</label>
-                                                             <input 
-                                                                type="number" 
-                                                                placeholder="0" 
-                                                                value={newValueInput[stat.id] || ''} 
-                                                                onChange={e => setNewValueInput({...newValueInput, [stat.id]: e.target.value})} 
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter') {
-                                                                        e.preventDefault();
-                                                                        handleAddValue(stat.id, stat.is_double || false);
-                                                                    }
-                                                                }}
-                                                                className="w-full h-9 px-3 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-300 placeholder:font-normal" 
-                                                             />
-                                                        </div>
-
-                                                        {stat.is_double && (
-                                                            <div className="flex-1 min-w-[80px]">
-                                                                <label className="block text-[8px] font-bold text-slate-400 mb-1 uppercase">Вал 2</label>
+                                                    {/* Mobile Friendly Input Stack */}
+                                                    <div className="flex flex-col sm:flex-row gap-2 w-full">
+                                                        <div className="flex gap-2 w-full sm:w-auto">
+                                                            <div className="relative flex-1 sm:flex-none">
+                                                                <label className="block text-[8px] font-bold text-slate-400 mb-1 uppercase">Дата (Чт)</label>
+                                                                <input type="date" value={newStatDate} onChange={e => setNewStatDate(e.target.value)} className="h-9 px-2 border border-slate-200 rounded-lg text-xs font-medium bg-white text-slate-700 focus:border-blue-300 outline-none w-full sm:w-28" />
+                                                            </div>
+                                                            <div className="flex-1 sm:min-w-[80px]">
+                                                                <label className="block text-[8px] font-bold text-slate-400 mb-1 uppercase">Значение</label>
                                                                 <input 
                                                                     type="number" 
                                                                     placeholder="0" 
-                                                                    value={newValueInput2[stat.id] || ''} 
-                                                                    onChange={e => setNewValueInput2({...newValueInput2, [stat.id]: e.target.value})} 
+                                                                    value={newValueInput[stat.id] || ''} 
+                                                                    onChange={e => setNewValueInput({...newValueInput, [stat.id]: e.target.value})} 
                                                                     onKeyDown={(e) => {
                                                                         if (e.key === 'Enter') {
                                                                             e.preventDefault();
@@ -931,9 +917,30 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                                                     className="w-full h-9 px-3 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-300 placeholder:font-normal" 
                                                                 />
                                                             </div>
-                                                        )}
+                                                        </div>
 
-                                                        <button type="button" onClick={() => handleAddValue(stat.id, stat.is_double || false)} className="h-9 px-4 bg-white border border-slate-200 hover:bg-blue-600 hover:text-white hover:border-blue-600 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-sm ml-auto"><Plus size={16}/> <span className="hidden sm:inline">Добавить</span></button>
+                                                        <div className="flex gap-2 flex-1">
+                                                            {stat.is_double && (
+                                                                <div className="flex-1 sm:min-w-[80px]">
+                                                                    <label className="block text-[8px] font-bold text-slate-400 mb-1 uppercase">Вал 2</label>
+                                                                    <input 
+                                                                        type="number" 
+                                                                        placeholder="0" 
+                                                                        value={newValueInput2[stat.id] || ''} 
+                                                                        onChange={e => setNewValueInput2({...newValueInput2, [stat.id]: e.target.value})} 
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                handleAddValue(stat.id, stat.is_double || false);
+                                                                            }
+                                                                        }}
+                                                                        className="w-full h-9 px-3 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-300 placeholder:font-normal" 
+                                                                    />
+                                                                </div>
+                                                            )}
+
+                                                            <button type="button" onClick={() => handleAddValue(stat.id, stat.is_double || false)} className="h-9 px-4 bg-white border border-slate-200 hover:bg-blue-600 hover:text-white hover:border-blue-600 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-sm flex-1 sm:flex-none mt-auto"><Plus size={16}/> <span className="sm:inline">Добавить</span></button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )}
