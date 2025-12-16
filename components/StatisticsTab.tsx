@@ -412,16 +412,22 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
 
               <div className="p-2.5 md:p-3 md:pl-4 flex flex-col h-full relative z-10">
                   <div className="flex justify-between items-start mb-1 md:mb-2">
-                      <div className="flex-1 pr-6">
-                           <div className="flex items-center gap-1.5">
-                                <h3 className="text-[10px] md:text-xs font-bold text-slate-800 leading-snug line-clamp-2" title={stat.title}>{stat.title}</h3>
+                      <div className="flex-1 pr-6 min-h-[2.5rem] md:min-h-[3rem]">
+                           <div className="flex flex-col gap-0.5">
+                                <h3 
+                                    className="text-[10px] md:text-xs font-bold text-slate-800 leading-tight line-clamp-4 md:line-clamp-3 text-balance" 
+                                    title={stat.title}
+                                    style={{wordBreak: 'break-word'}}
+                                >
+                                    {stat.title}
+                                </h3>
                                 {stat.inverted && (
-                                    <span className="text-[7px] md:text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0">
+                                    <span className="self-start text-[7px] md:text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0 mt-0.5">
                                         <ArrowDownUp size={8}/> <span className="hidden md:inline">ОБР</span>
                                     </span>
                                 )}
                            </div>
-                           <div className="text-[8px] md:text-[9px] text-slate-400 font-medium truncate mt-0.5 line-clamp-1" title={stat.description}>{stat.description || getOwnerName(stat.owner_id || '')}</div>
+                           <div className="text-[8px] md:text-[9px] text-slate-400 font-medium truncate mt-1 line-clamp-1" title={stat.description}>{stat.description || getOwnerName(stat.owner_id || '')}</div>
                       </div>
                       {!isEditMode && (
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-3 right-3 text-slate-300">
@@ -678,9 +684,9 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
           {expandedStatId && (
                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setExpandedStatId(null)}>
                    <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-                       <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                           <h3 className="font-bold text-lg text-slate-800 truncate pr-4">{definitions.find(d => d.id === expandedStatId)?.title}</h3>
-                           <button onClick={() => setExpandedStatId(null)} className="p-2 hover:bg-slate-100 rounded-full flex-shrink-0"><X size={20}/></button>
+                       <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-start gap-4">
+                           <h3 className="font-bold text-base md:text-xl text-slate-800 leading-tight text-balance flex-1 break-words">{definitions.find(d => d.id === expandedStatId)?.title}</h3>
+                           <button onClick={() => setExpandedStatId(null)} className="p-2 hover:bg-slate-100 rounded-full flex-shrink-0 mt-1"><X size={20}/></button>
                        </div>
                        <div className="flex-1 p-4 md:p-6 bg-slate-50 overflow-y-auto">
                             {(() => {
@@ -775,71 +781,151 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                          <div className="grid grid-cols-2 gap-3">
                               <div>
                                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Тип</label>
-                                  <select value={editingStatDef.type || 'department'} onChange={e => setEditingStatDef({...editingStatDef, type: e.target.value as any})} className="w-full p-2 border border-slate-200 rounded-lg text-sm">
-                                      <option value="department">Департамент</option>
+                                  <select value={editingStatDef.type || 'department'} onChange={e => setEditingStatDef({...editingStatDef, type: e.target.value as any})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm">
                                       <option value="company">Компания</option>
+                                      <option value="department">Департамент</option>
+                                      <option value="employee">Сотрудник</option>
                                   </select>
                               </div>
                               <div>
-                                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Метод расчета</label>
-                                   <input value={editingStatDef.calculation_method || ''} onChange={e => setEditingStatDef({...editingStatDef, calculation_method: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm" placeholder="THB, Шт, %..." />
+                                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ед. Измерения</label>
+                                  <input value={editingStatDef.calculation_method || ''} onChange={e => setEditingStatDef({...editingStatDef, calculation_method: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm" placeholder="шт, %, THB" />
                               </div>
                          </div>
-                         <div className="space-y-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                             <label className="flex items-center gap-2 cursor-pointer">
-                                 <input type="checkbox" checked={editingStatDef.is_favorite || false} onChange={e => setEditingStatDef({...editingStatDef, is_favorite: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                 <span className="text-sm text-slate-700">Главная статистика (ГСД)</span>
+                         
+                         <div className="flex flex-col gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                             <label className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-100 rounded">
+                                 <input type="checkbox" checked={editingStatDef.is_favorite || false} onChange={e => setEditingStatDef({...editingStatDef, is_favorite: e.target.checked})} className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 transition-all" />
+                                 <div>
+                                     <div className="text-sm font-bold text-slate-700">ГСД (Главная Статистика)</div>
+                                     <div className="text-xs text-slate-400">Выделяется в дашборде</div>
+                                 </div>
                              </label>
-                             <label className="flex items-center gap-2 cursor-pointer">
-                                 <input type="checkbox" checked={editingStatDef.inverted || false} onChange={e => setEditingStatDef({...editingStatDef, inverted: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                 <span className="text-sm text-slate-700">Обратная (Меньше = Лучше)</span>
+                             
+                             <label className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-100 rounded">
+                                 <input type="checkbox" checked={editingStatDef.inverted || false} onChange={e => setEditingStatDef({...editingStatDef, inverted: e.target.checked})} className="h-5 w-5 rounded border-slate-300 text-purple-600 focus:ring-purple-500 transition-all" />
+                                 <div>
+                                     <div className="text-sm font-bold text-slate-700">Обратная статистика</div>
+                                     <div className="text-xs text-slate-400">Меньше = Лучше (напр. долги)</div>
+                                 </div>
                              </label>
-                             <label className="flex items-center gap-2 cursor-pointer">
-                                 <input type="checkbox" checked={editingStatDef.is_double || false} onChange={e => setEditingStatDef({...editingStatDef, is_double: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
-                                 <span className="text-sm text-slate-700">Двойной график (2 значения)</span>
+                             
+                             <label className="flex items-center gap-3 cursor-pointer p-1 hover:bg-slate-100 rounded">
+                                 <input type="checkbox" checked={editingStatDef.is_double || false} onChange={e => setEditingStatDef({...editingStatDef, is_double: e.target.checked})} className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 transition-all" />
+                                 <div>
+                                     <div className="text-sm font-bold text-slate-700">Двойная статистика</div>
+                                     <div className="text-xs text-slate-400">Два графика на одной оси</div>
+                                 </div>
                              </label>
                          </div>
                      </div>
-                     <div className="p-4 border-t border-slate-100 flex justify-end gap-3">
-                         <button onClick={() => setEditingStatDef(null)} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Отмена</button>
-                         <button onClick={handleSaveDefinition} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200">Сохранить</button>
+                     <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                         <button onClick={() => setEditingStatDef(null)} className="flex-1 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors">Отмена</button>
+                         <button onClick={handleSaveDefinition} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all">Сохранить</button>
                      </div>
                  </div>
              </div>
           )}
-          
-          {/* Value Editor Modal and rest... */}
+
+          {/* VALUES EDITOR MODAL */}
           {isValueModalOpen && selectedStatForValues && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-                    <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]">
-                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                            <div className="min-w-0 pr-2"><h3 className="font-bold text-slate-800 leading-tight truncate">{selectedStatForValues.title}</h3></div>
-                            <button onClick={() => setIsValueModalOpen(false)} className="flex-shrink-0"><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
-                        </div>
-                        <div className="p-4 border-b border-slate-100 bg-blue-50/50">
-                             <div className="flex flex-col sm:flex-row gap-3">
-                                 <div className="w-full sm:w-1/3"><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Дата</label><input type="date" value={editingValue?.date || ''} onChange={e => setEditingValue({...editingValue, date: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-medium h-10"/></div>
-                                 <div className="flex-1"><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Значение</label><input type="number" value={editingValue?.value || 0} onChange={e => setEditingValue({...editingValue, value: parseFloat(e.target.value)})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-bold h-10"/></div>
-                                 {selectedStatForValues.is_double && (<div className="flex-1"><label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Вал 2</label><input type="number" value={editingValue?.value2 || 0} onChange={e => setEditingValue({...editingValue, value2: parseFloat(e.target.value)})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-bold h-10"/></div>)}
-                             </div>
-                             <div className="flex justify-end mt-4 gap-3">
-                                 {editingValue.id && <button onClick={() => setEditingValue({ definition_id: selectedStatForValues.id, date: new Date().toISOString().split('T')[0], value: 0, value2: 0 })} className="text-xs text-slate-400 underline self-center">Отмена</button>}
-                                 <button onClick={handleSaveValue} className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl shadow-sm hover:bg-blue-700 flex items-center justify-center gap-1"><Save size={16}/> Сохранить</button>
-                             </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                            {currentStatValues.length === 0 && <div className="text-center py-8 text-slate-400 text-sm">Нет данных</div>}
-                            <table className="w-full text-sm">
-                                <thead className="bg-slate-50 text-slate-400 font-bold text-xs uppercase sticky top-0"><tr><th className="px-3 py-2 text-left">Дата</th><th className="px-3 py-2 text-right">Значение</th><th className="px-3 py-2 text-right"></th></tr></thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {currentStatValues.map(val => (
-                                        <tr key={val.id} className="hover:bg-slate-50"><td className="px-3 py-2 text-slate-600">{format(new Date(val.date), 'dd.MM.yy')}</td><td className="px-3 py-2 text-right font-bold text-slate-800">{val.value.toLocaleString()} {selectedStatForValues.is_double && <span className="text-slate-400 ml-1">/ {val.value2?.toLocaleString()}</span>}</td><td className="px-3 py-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setEditingValue(val)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button><button onClick={() => handleDeleteValue(val.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></td></tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                  <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+                      <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                          <div>
+                              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Редактор значений</div>
+                              <h3 className="font-bold text-lg text-slate-800 leading-tight">{selectedStatForValues.title}</h3>
+                          </div>
+                          <button onClick={() => setIsValueModalOpen(false)} className="flex-shrink-0"><X size={24} className="text-slate-400 hover:text-slate-600"/></button>
+                      </div>
+                      
+                      {/* Editor Form */}
+                      <div className="p-4 bg-blue-50 border-b border-blue-100 flex flex-col gap-3">
+                          <div className="flex gap-3">
+                              <div className="flex-1">
+                                  <label className="block text-[10px] font-bold text-blue-400 uppercase mb-1">Дата</label>
+                                  <input 
+                                      type="date" 
+                                      value={editingValue?.date || ''} 
+                                      onChange={e => setEditingValue({...editingValue, date: e.target.value})} 
+                                      className="w-full border border-blue-200 bg-white rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400" 
+                                  />
+                              </div>
+                              <div className="flex-1">
+                                  <label className="block text-[10px] font-bold text-blue-400 uppercase mb-1">Значение 1</label>
+                                  <input 
+                                      type="number" 
+                                      value={editingValue?.value || ''} 
+                                      onChange={e => setEditingValue({...editingValue, value: parseFloat(e.target.value)})} 
+                                      className="w-full border border-blue-200 bg-white rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400" 
+                                      placeholder="0"
+                                  />
+                              </div>
+                              {selectedStatForValues.is_double && (
+                                  <div className="flex-1">
+                                      <label className="block text-[10px] font-bold text-blue-400 uppercase mb-1">Значение 2</label>
+                                      <input 
+                                          type="number" 
+                                          value={editingValue?.value2 || ''} 
+                                          onChange={e => setEditingValue({...editingValue, value2: parseFloat(e.target.value)})} 
+                                          className="w-full border border-blue-200 bg-white rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400" 
+                                          placeholder="0"
+                                      />
+                                  </div>
+                              )}
+                          </div>
+                          <div className="flex justify-end gap-3 mt-1">
+                              {editingValue?.id && (
+                                  <button 
+                                      onClick={() => setEditingValue({ definition_id: selectedStatForValues.id, date: new Date().toISOString().split('T')[0], value: 0, value2: 0 })} 
+                                      className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-lg text-xs transition-colors"
+                                  >
+                                      Отмена
+                                  </button>
+                              )}
+                              <button 
+                                  onClick={handleSaveValue} 
+                                  className="px-6 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all hover:-translate-y-0.5"
+                              >
+                                  {editingValue?.id ? 'Обновить' : 'Добавить'}
+                              </button>
+                          </div>
+                      </div>
+
+                      {/* Values List */}
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
+                          {currentStatValues.length === 0 ? (
+                              <div className="p-8 text-center text-slate-400 text-sm">Нет записей</div>
+                          ) : (
+                              <table className="w-full text-sm">
+                                  <thead className="bg-slate-50 text-slate-400 font-bold text-[10px] uppercase sticky top-0 z-10 shadow-sm">
+                                      <tr>
+                                          <th className="px-4 py-3 text-left">Дата</th>
+                                          <th className="px-4 py-3 text-right">Значение</th>
+                                          {selectedStatForValues.is_double && <th className="px-4 py-3 text-right">Вал 2</th>}
+                                          <th className="px-4 py-3 text-right"></th>
+                                      </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                      {currentStatValues.map(val => (
+                                          <tr key={val.id} className="hover:bg-blue-50/50 transition-colors group">
+                                              <td className="px-4 py-3 text-slate-600 font-medium">{format(new Date(val.date), 'dd.MM.yyyy')}</td>
+                                              <td className="px-4 py-3 text-right font-bold text-slate-800">{val.value.toLocaleString()}</td>
+                                              {selectedStatForValues.is_double && <td className="px-4 py-3 text-right font-bold text-slate-500">{(val.value2 || 0).toLocaleString()}</td>}
+                                              <td className="px-4 py-3 text-right">
+                                                  <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                      <button onClick={() => setEditingValue(val)} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"><Edit2 size={14}/></button>
+                                                      <button onClick={() => handleDeleteValue(val.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><Trash2 size={14}/></button>
+                                                  </div>
+                                              </td>
+                                          </tr>
+                                      ))}
+                                  </tbody>
+                              </table>
+                          )}
+                      </div>
+                  </div>
+              </div>
           )}
       </div>
   );
