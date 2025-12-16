@@ -291,9 +291,9 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 justify-items-center md:justify-items-stretch">
       {employees.map((emp) => (
-        <div key={emp.id} onClick={() => onEdit(emp)} className="group bg-white rounded-xl md:rounded-2xl shadow-sm hover:shadow-md border border-slate-200 transition-all duration-300 overflow-hidden flex flex-col relative cursor-pointer hover:-translate-y-1">
+        <div key={emp.id} onClick={() => onEdit(emp)} className="w-full max-w-[260px] md:max-w-none group bg-white rounded-xl md:rounded-2xl shadow-sm hover:shadow-md border border-slate-200 transition-all duration-300 overflow-hidden flex flex-col relative cursor-pointer hover:-translate-y-1">
           
           {/* Top colored banner - Compact on Mobile */}
           <div className="h-14 md:h-20 w-full relative overflow-hidden" style={{ backgroundColor: getDeptColor(emp.department?.[0]) + '25' }}>

@@ -350,7 +350,7 @@ function App() {
       {/* Mobile Backdrop */}
       {isMobileMenuOpen && (
           <div 
-            className="fixed inset-0 bg-slate-900/50 z-20 md:hidden backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 bg-slate-900/50 z-30 md:hidden backdrop-blur-sm transition-opacity"
             onClick={() => setIsMobileMenuOpen(false)}
           ></div>
       )}
@@ -367,7 +367,7 @@ function App() {
 
       {/* Sidebar */}
       <aside 
-        className={`fixed inset-y-0 left-0 z-30 bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out shadow-lg shadow-slate-200/50 md:relative md:translate-x-0 ${sidebarWidth} ${sidebarMobileClasses}`}
+        className={`fixed inset-y-0 left-0 z-40 bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out shadow-lg shadow-slate-200/50 md:relative md:translate-x-0 ${sidebarWidth} ${sidebarMobileClasses}`}
       >
         <div className="p-4 border-b border-gray-100 flex items-center justify-between h-[73px]">
           <div className="flex items-center gap-3 overflow-hidden">
@@ -455,8 +455,8 @@ function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out h-full overflow-hidden">
-        {/* Top Bar */}
-        <header className="bg-white/80 backdrop-blur-md sticky top-0 z-10 border-b border-gray-200 px-4 md:px-8 py-4 flex justify-between items-center print:hidden h-[73px]">
+        {/* Top Bar - Fixed on Mobile to keep search visible */}
+        <header className="bg-white/80 backdrop-blur-md fixed md:sticky top-0 left-0 right-0 z-20 border-b border-gray-200 px-4 md:px-8 py-4 flex justify-between items-center print:hidden h-[73px] w-full transition-all duration-300">
           <div className="flex items-center gap-4 flex-1">
             <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100"><Menu size={24} /></button>
             
@@ -496,8 +496,8 @@ function App() {
           </div>
         </header>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden p-4 md:p-8">
+        {/* Content Area - Added top padding for mobile to account for fixed header */}
+        <div className="flex-1 overflow-hidden p-4 md:p-8 pt-[89px] md:pt-8">
           {isLoading ? (
              <div className="flex flex-col items-center justify-center h-full text-slate-400"><Loader2 className="animate-spin mb-2" size={32} /><p>Загрузка данных...</p></div>
           ) : (
