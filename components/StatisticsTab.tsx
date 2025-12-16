@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { StatisticDefinition, StatisticValue, WiseCondition, Employee } from '../types';
 import { ORGANIZATION_STRUCTURE, HANDBOOK_STATISTICS } from '../constants';
 import StatsChart from './StatsChart';
-import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface StatisticsTabProps {
@@ -46,24 +46,19 @@ const PERIODS = [
 
 // --- STRICT TREND ANALYSIS LOGIC (PERIOD BASED) ---
 const analyzeTrend = (vals: StatisticValue[], inverted: boolean = false) => {
-    // 1. Safety check
     if (!vals || vals.length === 0) {
         return { current: 0, prev: 0, delta: 0, percent: 0, direction: 'flat' as const, isGood: true };
     }
 
-    // 2. Strict Sort by Date (Oldest to Newest)
     const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const n = sorted.length;
 
-    // 3. Extract Points (Current vs START OF PERIOD)
-    // To show growth over the selected timeframe, we compare the Last point against the First point of the visible chart.
+    // Compare Last Value vs First Value of Selected Period
     const current = sorted[n - 1].value;
     const startOfPeriod = sorted[0].value; 
     
-    // Fallback: If only 1 point exists, compare to 0.
     const prev = n > 1 ? startOfPeriod : 0;
 
-    // 4. Calculate Math
     const delta = current - prev;
     
     let percent = 0;
@@ -73,17 +68,15 @@ const analyzeTrend = (vals: StatisticValue[], inverted: boolean = false) => {
         percent = (delta / Math.abs(prev)) * 100;
     }
 
-    // 5. Determine Physical Direction (Up/Down)
     let direction: 'up' | 'down' | 'flat' = 'flat';
     if (delta > 0) direction = 'up';
     if (delta < 0) direction = 'down';
 
-    // 6. Determine Sentiment
     let isGood = true;
     if (inverted) {
-        isGood = delta <= 0; // Down is Good for Inverted
+        isGood = delta <= 0;
     } else {
-        isGood = delta >= 0; // Up is Good for Normal
+        isGood = delta >= 0;
     }
 
     return { current, prev, delta, percent, direction, isGood };
@@ -97,6 +90,7 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   
   // EXPANDED VIEW STATE
   const [expandedStatId, setExpandedStatId] = useState<string | null>(null);
+  const [showFullDesc, setShowFullDesc] = useState(true); 
 
   // ADMIN EDIT MODE
   const [isEditMode, setIsEditMode] = useState(false);
@@ -111,6 +105,11 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetchDefinitions(); fetchAllValues(); }, [isOffline]); 
+
+  // Reset description toggle when opening new stat
+  useEffect(() => {
+      setShowFullDesc(true);
+  }, [expandedStatId]);
 
   const fetchDefinitions = async () => {
     if (isOffline) { 
@@ -140,8 +139,165 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       }
   };
 
+  // --- EXPORT & IMPORT ---
+  const handleExportStats = () => {
+      // 1. Prepare Header
+      const csvRows = [
+          [
+              'ID Статистики (Не менять)', 
+              'Департамент', 
+              'Название Статистики', 
+              'Период', 
+              'Посл. Дата',
+              'Текущее Значение', 
+              'Динамика', 
+              'Изменение %', 
+              'Тренд',
+              '[ВВОД] Дата (ГГГГ-ММ-ДД)',
+              '[ВВОД] Значение'
+          ].join(',')
+      ];
+
+      // 2. Iterate and Calculate
+      definitions.forEach(stat => {
+          const vals = getFilteredValues(stat.id);
+          const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
+          const deptName = getOwnerName(stat.owner_id || '').replace(/,/g, ''); // Remove commas for CSV safety
+          const title = stat.title.replace(/,/g, ' ');
+          
+          let trendSymbol = '→';
+          if (direction === 'up') trendSymbol = '↑';
+          if (direction === 'down') trendSymbol = '↓';
+          
+          let trendText = 'Стабильно';
+          if (direction === 'up') trendText = stat.inverted ? 'Ухудшение (Рост)' : 'Рост';
+          if (direction === 'down') trendText = stat.inverted ? 'Улучшение (Падение)' : 'Падение';
+
+          const periodLabel = PERIODS.find(p => p.id === selectedPeriod)?.label || selectedPeriod;
+          const lastDate = vals.length > 0 ? format(new Date(vals[vals.length-1].date), 'dd.MM.yyyy') : '-';
+
+          const row = [
+              stat.id,
+              `"${deptName}"`,
+              `"${title}"`,
+              periodLabel,
+              lastDate,
+              current,
+              trendText,
+              `${percent.toFixed(1)}%`,
+              trendSymbol,
+              '', // Empty for user input date
+              ''  // Empty for user input value
+          ].join(',');
+
+          csvRows.push(row);
+      });
+
+      // 3. Download
+      const csvContent = "\ufeff" + csvRows.join('\n'); // Add BOM for Excel Cyrillic support
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `statistics_report_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      a.click();
+  };
+
+  const handleImportStats = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file || !supabase) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          try {
+              const content = e.target?.result as string;
+              const lines = content.split('\n');
+              const newValues: any[] = [];
+              let importCount = 0;
+
+              // Skip header (index 0)
+              for (let i = 1; i < lines.length; i++) {
+                  const line = lines[i].trim();
+                  if (!line) continue;
+                  
+                  // Simple CSV split (assuming no complex escaped commas in values based on our export)
+                  // Columns: 0:ID, ..., 9:InputDate, 10:InputValue
+                  // NOTE: Quotes might wrap some fields, rudimentary parsing:
+                  const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                  
+                  const statId = cols[0]?.replace(/"/g, '').trim();
+                  const inputDate = cols[9]?.trim();
+                  const inputValue = cols[10]?.trim();
+
+                  if (statId && inputDate && inputValue && inputValue !== '') {
+                      newValues.push({
+                          definition_id: statId,
+                          date: inputDate,
+                          value: parseFloat(inputValue),
+                          value2: 0
+                      });
+                      importCount++;
+                  }
+              }
+
+              if (newValues.length > 0) {
+                  if(confirm(`Найдено ${importCount} новых значений для импорта. Загрузить в базу?`)) {
+                      const { error } = await supabase.from('statistics_values').insert(newValues);
+                      if (error) throw error;
+                      alert('Данные успешно импортированы!');
+                      await fetchAllValues();
+                  }
+              } else {
+                  alert('Не найдено данных для импорта. Заполните последние две колонки в CSV файле: Дата и Значение.');
+              }
+
+          } catch (err: any) {
+              alert('Ошибка импорта: ' + err.message);
+          }
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      };
+      reader.readAsText(file);
+  };
+
   // --- ADMIN ACTIONS ---
-  const handleCreateOrUpdateStat = async () => { /* ... preserved ... */ };
+  const handleSaveDefinition = async () => {
+    if (!editingStatDef) return;
+    if (!editingStatDef.title || !editingStatDef.owner_id) {
+        alert("Название и Владелец обязательны");
+        return;
+    }
+
+    const payload = {
+        title: editingStatDef.title,
+        description: editingStatDef.description || '',
+        type: editingStatDef.type || 'department',
+        owner_id: editingStatDef.owner_id,
+        inverted: editingStatDef.inverted || false,
+        is_favorite: editingStatDef.is_favorite || false,
+        is_double: editingStatDef.is_double || false,
+        calculation_method: editingStatDef.calculation_method || '',
+    };
+
+    try {
+        if (isOffline || !supabase) {
+             const newDef = { ...payload, id: editingStatDef.id || `local-def-${Date.now()}` } as StatisticDefinition;
+             setDefinitions(prev => editingStatDef.id ? prev.map(d => d.id === editingStatDef.id ? newDef : d) : [...prev, newDef]);
+        } else {
+            if (editingStatDef.id) {
+                const { error } = await supabase.from('statistics_definitions').update(payload).eq('id', editingStatDef.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('statistics_definitions').insert([payload]);
+                if (error) throw error;
+            }
+            await fetchDefinitions();
+        }
+        setEditingStatDef(null);
+    } catch (err: any) {
+        alert('Ошибка сохранения: ' + err.message);
+    }
+  };
+
   const handleDeleteStat = async (id: string) => { 
       if (!isAdmin) return;
       if (!confirm("Вы уверены? Это удалит статистику и ВСЮ историю значений.")) return;
@@ -182,7 +338,7 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       if (ORGANIZATION_STRUCTURE[ownerId]) return ORGANIZATION_STRUCTURE[ownerId].name;
       for(const key in ORGANIZATION_STRUCTURE) {
           const d = ORGANIZATION_STRUCTURE[key];
-          if (d.departments && d.departments[ownerId]) return d.departments[ownerId].name;
+          if (d.departments && d.departments[ownerId]) return `${d.name.split('.')[0]} -> ${d.departments[ownerId].name}`;
       }
       return ownerId;
   };
@@ -214,12 +370,29 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       setEditingValue({ definition_id: selectedStatForValues.id, date: new Date().toISOString().split('T')[0], value: 0, value2: 0 });
   };
 
+  const handleDeleteValue = async (id: string) => {
+      if(!confirm("Удалить это значение?")) return;
+      if(isOffline || !supabase) {
+          setCurrentStatValues(prev => prev.filter(v => v.id !== id));
+          // Mock update global state for offline
+          return;
+      }
+      
+      const { error } = await supabase.from('statistics_values').delete().eq('id', id);
+      if(!error) {
+          setCurrentStatValues(prev => prev.filter(v => v.id !== id));
+          fetchAllValues();
+      } else {
+          alert("Ошибка удаления: " + error.message);
+      }
+  };
+
   // --- RENDER CARD ---
   const renderStatCard = (stat: StatisticDefinition, deptColor: string, contextKey: string) => {
       const vals = getFilteredValues(stat.id);
       const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
       
-      const trendColorHex = isGood ? "#10b981" : "#f43f5e"; // Emerald vs Rose
+      const trendColorHex = isGood ? "#10b981" : "#f43f5e"; 
 
       return (
           <div 
@@ -271,7 +444,6 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                   </div>
                   
                   <div className={`flex-1 w-full min-h-0 relative`}>
-                       {/* Pass the calculated isGood color to the chart to ensure visual consistency */}
                        <StatsChart key={selectedPeriod} values={vals} color={trendColorHex} inverted={stat.inverted} isDouble={stat.is_double} />
                   </div>
                   <div className="absolute bottom-2 right-2 flex gap-1 pointer-events-none opacity-50">
@@ -289,18 +461,13 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
               const dept = ORGANIZATION_STRUCTURE[deptId];
               if (!dept) return null;
               
-              // DUPLICATION LOGIC
-              const deptStats = definitions.filter(d => {
-                  if (d.owner_id === deptId) return true;
-                  if (d.is_favorite && dept.departments && Object.keys(dept.departments).includes(d.owner_id || '')) return true;
-                  return false;
-              });
-              
               const isSpecificView = selectedDeptId === deptId;
-
+              const mainStats = definitions.filter(d => d.owner_id === deptId);
+              
               if (!isSpecificView) {
-                  // Overview Mode
-                  if (deptStats.length === 0 && !isEditMode) return null;
+                  // DASHBOARD MODE: Only Main Stats
+                  if (mainStats.length === 0 && !isEditMode) return null;
+                  
                   return (
                       <div key={deptId} className="space-y-3">
                            <div className="bg-white px-3 py-2 rounded-lg shadow-sm border border-slate-200 flex items-center justify-between border-l-4" style={{borderLeftColor: dept.color}}>
@@ -308,7 +475,7 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                                <span className="text-slate-400 text-xs font-medium">{dept.manager}</span>
                            </div>
                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                               {deptStats.map(stat => renderStatCard(stat, dept.color, 'overview'))}
+                               {mainStats.map(stat => renderStatCard(stat, dept.color, 'overview'))}
                                {isEditMode && isAdmin && (
                                    <div onClick={() => openNewStatModal(deptId)} className="border-2 border-dashed border-slate-300 rounded-xl h-[260px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
                                        <Plus size={32} />
@@ -319,7 +486,10 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                       </div>
                   );
               } else {
-                  // Specific Department Mode
+                  // SPECIFIC DEPARTMENT MODE: Show Main Stats + Sub-Department Sections
+                  const subDeptIds = dept.departments ? Object.keys(dept.departments) : [];
+                  const subDeptStatsCount = definitions.filter(d => d.owner_id && subDeptIds.includes(d.owner_id)).length;
+
                   return (
                       <div key={deptId} className="space-y-6">
                            <div className="bg-white px-4 py-3 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between border-l-4" style={{borderLeftColor: dept.color}}>
@@ -327,11 +497,14 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                                   <h2 className="text-lg font-bold text-slate-800">{dept.name}</h2>
                                   <p className="text-xs text-slate-500">{dept.manager}</p>
                                </div>
-                               <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{deptStats.length} статистик</span>
+                               <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">
+                                   {mainStats.length + subDeptStatsCount} статистик
+                               </span>
                            </div>
 
+                           {/* Main Dept Stats */}
                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                               {deptStats.map(stat => renderStatCard(stat, dept.color, 'main'))}
+                               {mainStats.map(stat => renderStatCard(stat, dept.color, `main-${deptId}`))}
                                {isEditMode && isAdmin && (
                                    <div onClick={() => openNewStatModal(deptId)} className="border-2 border-dashed border-slate-300 rounded-xl h-[260px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
                                        <Plus size={32} />
@@ -340,14 +513,16 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                                )}
                            </div>
 
+                           {/* Sub-Departments Stats */}
                            {dept.departments && Object.values(dept.departments).map(sub => {
-                               const subStats = definitions.filter(d => d.owner_id === sub.id);
-                               if(subStats.length === 0 && !isEditMode) return null;
+                               const specificSubStats = definitions.filter(d => d.owner_id === sub.id);
+                               if(specificSubStats.length === 0 && !isEditMode) return null;
+                               
                                return (
                                    <div key={sub.id} className="mt-8 pt-4 border-t border-slate-100">
                                        <h3 className="text-sm font-bold text-slate-600 mb-4 flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{backgroundColor: dept.color}}></div> {sub.name}</h3>
                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                           {subStats.map(stat => renderStatCard(stat, dept.color, `sub-${sub.id}`))}
+                                           {specificSubStats.map(stat => renderStatCard(stat, dept.color, `sub-${sub.id}`))}
                                            {isEditMode && isAdmin && (
                                                <div onClick={() => openNewStatModal(sub.id)} className="border-2 border-dashed border-slate-300 rounded-xl h-[260px] flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all">
                                                    <Plus size={32} />
@@ -365,7 +540,88 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       </div>
   );
 
-  const renderListView = () => { /* ... preserved ... */ return null; };
+  const renderListView = () => {
+      // Flatten and sort definitions based on hierarchy
+      const sortedDefs = [...definitions].sort((a, b) => {
+          // Sort logic matches DEPT_ORDER roughly
+          const getDeptIndex = (id?: string) => {
+              if (!id) return 999;
+              // Check if it's a main dept
+              const mainIdx = DEPT_ORDER.indexOf(id);
+              if (mainIdx !== -1) return mainIdx * 100;
+              // Check if it's a sub dept
+              for (let i = 0; i < DEPT_ORDER.length; i++) {
+                  const dId = DEPT_ORDER[i];
+                  const dept = ORGANIZATION_STRUCTURE[dId];
+                  if (dept.departments && dept.departments[id]) {
+                      return i * 100 + Object.keys(dept.departments).indexOf(id) + 1;
+                  }
+              }
+              return 999;
+          };
+          return getDeptIndex(a.owner_id) - getDeptIndex(b.owner_id);
+      });
+
+      return (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
+              <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase border-b border-slate-200">
+                      <tr>
+                          <th className="px-6 py-4">Название</th>
+                          <th className="px-6 py-4">Владелец</th>
+                          <th className="px-6 py-4">Тип / Метод</th>
+                          <th className="px-6 py-4 text-right">Действия</th>
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                      {sortedDefs.map(stat => (
+                          <tr key={stat.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-6 py-4">
+                                  <div className="font-bold text-slate-800">{stat.title}</div>
+                                  <div className="text-xs text-slate-500 line-clamp-1">{stat.description}</div>
+                                  <div className="flex gap-1 mt-1">
+                                      {stat.is_favorite && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">ГСД</span>}
+                                      {stat.inverted && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">Обратная</span>}
+                                      {stat.is_double && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Двойная</span>}
+                                  </div>
+                              </td>
+                              <td className="px-6 py-4 text-slate-600 font-medium">
+                                  {getOwnerName(stat.owner_id || '')}
+                              </td>
+                              <td className="px-6 py-4">
+                                  <span className="px-2 py-1 rounded bg-slate-100 text-slate-500 text-xs font-bold mr-2">{stat.type}</span>
+                                  <span className="text-xs text-slate-400">{stat.calculation_method || '-'}</span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                  <div className="flex justify-end gap-2">
+                                      <button onClick={() => setExpandedStatId(stat.id)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Открыть график">
+                                          <TrendingUp size={16}/>
+                                      </button>
+                                      {isAdmin && (
+                                          <>
+                                              <button onClick={(e) => { e.stopPropagation(); handleOpenValues(stat); }} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Ввод данных">
+                                                  <Calendar size={16}/>
+                                              </button>
+                                              <button onClick={(e) => { e.stopPropagation(); setEditingStatDef(stat); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Изменить">
+                                                  <Edit2 size={16}/>
+                                              </button>
+                                              <button onClick={(e) => { e.stopPropagation(); handleDeleteStat(stat.id); }} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Удалить">
+                                                  <Trash2 size={16}/>
+                                              </button>
+                                          </>
+                                      )}
+                                  </div>
+                              </td>
+                          </tr>
+                      ))}
+                      {sortedDefs.length === 0 && (
+                          <tr><td colSpan={4} className="p-8 text-center text-slate-400">Нет данных</td></tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      );
+  };
 
   return (
       <div className="flex flex-col h-full animate-in fade-in space-y-4">
@@ -375,6 +631,28 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                      <button onClick={() => setDisplayMode('dashboard')} className={`p-2 rounded-md transition-all ${displayMode === 'dashboard' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><LayoutDashboard size={18}/></button>
                      <button onClick={() => setDisplayMode('list')} className={`p-2 rounded-md transition-all ${displayMode === 'list' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><List size={18}/></button>
                  </div>
+                 
+                 {/* EXPORT / IMPORT ACTIONS */}
+                 {isAdmin && (
+                     <div className="flex items-center gap-2">
+                         <button 
+                            onClick={handleExportStats}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
+                            title="Скачать полный отчет по статистикам (CSV)"
+                         >
+                             <Download size={14} /> <span className="hidden sm:inline">Экспорт</span>
+                         </button>
+                         <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
+                            title="Загрузить данные из Excel/CSV"
+                         >
+                             <Upload size={14} /> <span className="hidden sm:inline">Импорт</span>
+                         </button>
+                         <input type="file" ref={fileInputRef} onChange={handleImportStats} accept=".csv" className="hidden" />
+                     </div>
+                 )}
+
                  {isAdmin && (
                     <div className="flex items-center gap-2">
                         <button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-lg border transition-all ${isEditMode ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`} title="Режим редактирования">
@@ -413,10 +691,27 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                                 
                                 return (
                                     <div className="space-y-6">
-                                        <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl mb-4">
-                                            <h4 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">Описание</h4>
-                                            <p className="text-sm font-medium text-blue-900 leading-relaxed whitespace-pre-wrap">{stat.description || 'Нет описания'}</p>
+                                        {/* EXPANDED DESCRIPTION & HELP BLOCK */}
+                                        <div className="p-5 bg-blue-50 border border-blue-100 rounded-2xl mb-4 relative overflow-hidden">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h4 className="text-[10px] font-bold text-blue-500 uppercase tracking-widest flex items-center gap-1"><Info size={12}/> Справка о статистике</h4>
+                                                {isAdmin && (
+                                                    <button onClick={() => setEditingStatDef(stat)} className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 flex items-center gap-1 font-bold">
+                                                        <Edit2 size={10} /> Изменить
+                                                    </button>
+                                                )}
+                                            </div>
+                                            
+                                            <div className={`text-sm font-medium text-blue-900 leading-relaxed whitespace-pre-wrap transition-all`}>
+                                                {stat.description || 'Нет описания'}
+                                                {stat.purpose && (
+                                                    <div className="mt-2">
+                                                        <span className="font-bold">Цель: </span> {stat.purpose}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
+
                                         <div className="flex flex-col sm:flex-row items-stretch gap-4">
                                             <div className="p-4 bg-white rounded-2xl shadow-sm border border-slate-200 flex-1">
                                                 <div className="text-sm text-slate-500 font-medium mb-1">Текущее значение</div>
@@ -446,6 +741,73 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                </div>
           )}
           
+          {/* STAT DEFINITION EDITOR MODAL */}
+          {editingStatDef && (
+             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+                 <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+                     <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                         <h3 className="font-bold text-slate-800">{editingStatDef.id ? 'Редактировать статистику' : 'Создать статистику'}</h3>
+                         <button onClick={() => setEditingStatDef(null)} className="flex-shrink-0"><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+                     </div>
+                     <div className="p-6 space-y-4 overflow-y-auto">
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Название</label>
+                             <input value={editingStatDef.title || ''} onChange={e => setEditingStatDef({...editingStatDef, title: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-800" placeholder="Например: Валовый Доход" />
+                         </div>
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Владелец (Департамент)</label>
+                             <select value={editingStatDef.owner_id || ''} onChange={e => setEditingStatDef({...editingStatDef, owner_id: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">
+                                 <option value="">Выберите департамент...</option>
+                                 {Object.values(ORGANIZATION_STRUCTURE).map(dept => (
+                                     <React.Fragment key={dept.id}>
+                                         <option value={dept.id} className="font-bold">{dept.fullName}</option>
+                                         {dept.departments && Object.values(dept.departments).map(sub => (
+                                             <option key={sub.id} value={sub.id}>&nbsp;&nbsp;&nbsp;↳ {sub.name}</option>
+                                         ))}
+                                     </React.Fragment>
+                                 ))}
+                             </select>
+                         </div>
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Описание / Цель</label>
+                             <textarea value={editingStatDef.description || ''} onChange={e => setEditingStatDef({...editingStatDef, description: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm min-h-[80px]" placeholder="Что измеряет эта статистика?" />
+                         </div>
+                         <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Тип</label>
+                                  <select value={editingStatDef.type || 'department'} onChange={e => setEditingStatDef({...editingStatDef, type: e.target.value as any})} className="w-full p-2 border border-slate-200 rounded-lg text-sm">
+                                      <option value="department">Департамент</option>
+                                      <option value="company">Компания</option>
+                                  </select>
+                              </div>
+                              <div>
+                                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Метод расчета</label>
+                                   <input value={editingStatDef.calculation_method || ''} onChange={e => setEditingStatDef({...editingStatDef, calculation_method: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm" placeholder="THB, Шт, %..." />
+                              </div>
+                         </div>
+                         <div className="space-y-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                 <input type="checkbox" checked={editingStatDef.is_favorite || false} onChange={e => setEditingStatDef({...editingStatDef, is_favorite: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
+                                 <span className="text-sm text-slate-700">Главная статистика (ГСД)</span>
+                             </label>
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                 <input type="checkbox" checked={editingStatDef.inverted || false} onChange={e => setEditingStatDef({...editingStatDef, inverted: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
+                                 <span className="text-sm text-slate-700">Обратная (Меньше = Лучше)</span>
+                             </label>
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                 <input type="checkbox" checked={editingStatDef.is_double || false} onChange={e => setEditingStatDef({...editingStatDef, is_double: e.target.checked})} className="rounded text-blue-600 focus:ring-blue-500" />
+                                 <span className="text-sm text-slate-700">Двойной график (2 значения)</span>
+                             </label>
+                         </div>
+                     </div>
+                     <div className="p-4 border-t border-slate-100 flex justify-end gap-3">
+                         <button onClick={() => setEditingStatDef(null)} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Отмена</button>
+                         <button onClick={handleSaveDefinition} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200">Сохранить</button>
+                     </div>
+                 </div>
+             </div>
+          )}
+          
           {/* Value Editor Modal and rest... */}
           {isValueModalOpen && selectedStatForValues && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
@@ -471,7 +833,7 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                                 <thead className="bg-slate-50 text-slate-400 font-bold text-xs uppercase sticky top-0"><tr><th className="px-3 py-2 text-left">Дата</th><th className="px-3 py-2 text-right">Значение</th><th className="px-3 py-2 text-right"></th></tr></thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {currentStatValues.map(val => (
-                                        <tr key={val.id} className="hover:bg-slate-50"><td className="px-3 py-2 text-slate-600">{format(new Date(val.date), 'dd.MM.yy')}</td><td className="px-3 py-2 text-right font-bold text-slate-800">{val.value.toLocaleString()} {selectedStatForValues.is_double && <span className="text-slate-400 ml-1">/ {val.value2?.toLocaleString()}</span>}</td><td className="px-3 py-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setEditingValue(val)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button><button onClick={async () => { if(!confirm('Удалить?')) return; /* ... delete logic ... */ }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></td></tr>
+                                        <tr key={val.id} className="hover:bg-slate-50"><td className="px-3 py-2 text-slate-600">{format(new Date(val.date), 'dd.MM.yy')}</td><td className="px-3 py-2 text-right font-bold text-slate-800">{val.value.toLocaleString()} {selectedStatForValues.is_double && <span className="text-slate-400 ml-1">/ {val.value2?.toLocaleString()}</span>}</td><td className="px-3 py-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setEditingValue(val)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button><button onClick={() => handleDeleteValue(val.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button></div></td></tr>
                                     ))}
                                 </tbody>
                             </table>
