@@ -13,6 +13,10 @@ interface ErrorBoundaryState {
 
 // Extending React.Component with explicit props and state interfaces ensures the compiler recognizes inherited properties.
 class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  // Explicitly defining the props property as a class field ensures TypeScript identifies it correctly on the class instance,
+  // fixing errors where 'props' was reported as missing on the type 'ErrorBoundary'.
+  public props: ErrorBoundaryProps;
+
   // Explicitly defining the state property as a class field ensures TypeScript identifies it correctly on the class instance,
   // fixing errors where 'state' was reported as missing on the type 'ErrorBoundary'.
   public state: ErrorBoundaryState = {
@@ -43,7 +47,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             </div>
             <h1 className="text-xl font-bold text-center text-slate-800 mb-2">Произошла ошибка</h1>
             <p className="text-sm text-slate-500 text-center mb-6">
-              Система столкнулась с непредвиденной ошибкой.
+              Система столкнулась with an unexpected error.
             </p>
             <div className="bg-slate-100 p-3 rounded-lg text-xs font-mono text-slate-600 mb-6 overflow-auto max-h-32 border border-slate-200">
                 {/* Accessing error details from state for display in the UI */}
