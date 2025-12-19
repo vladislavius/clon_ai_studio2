@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react'; // Добавлен useCallback
 import ImportExport from './ImportExport';
 import IntegrationsPanel from './IntegrationsPanel';
 import { Employee } from '../types';
