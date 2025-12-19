@@ -1,5 +1,4 @@
-import React, { useRef } from 'react';
-import { Employee } from '../types';
+import React, { useRef, useCallback } from 'react'; 
 import { Download, Upload, FileJson, FileType, Database, AlertCircle, FileSpreadsheet } from 'lucide-react';
 
 interface ImportExportProps {
