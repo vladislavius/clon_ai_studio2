@@ -26,8 +26,12 @@ function shouldHandleRequest(request) {
   // 2. chrome:// запросы
   // 3. Не HTTP/HTTPS запросы
   // 4. Не-GET запросы (Cache API поддерживает только GET)
+  // 5. Не кэшируем JS/CSS/Sourcemap файлы чтобы избежать ситуации со старыми бандлами
+  const isStaticAsset = url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.map');
+
   return request.method === 'GET' && 
-         (url.protocol === 'http:' || url.protocol === 'https:');
+         (url.protocol === 'http:' || url.protocol === 'https:') &&
+         !isStaticAsset;
 }
 
 // Fetch event - serve from cache, fallback to network
