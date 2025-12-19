@@ -1,6 +1,4 @@
-
-import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useCallback } from 'react'; // <--- ДОБАВИТЬ ЭТОimport { AlertTriangle } from 'lucide-react';
 
 interface ConfirmationModalProps {
   isOpen: boolean;
