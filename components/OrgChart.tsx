@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react'; // Добавлен useCallback
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Employee, Department, SubDepartment } from '../types';
 import { User, X, Search, FileText, ChevronRight, Users, Crown, Target, Award, Copy, Check, MessageCircle, Phone, Hash, AlertTriangle, Zap, ChevronDown, ChevronUp, Edit2, Save, Trash2, Plus } from 'lucide-react';
