@@ -1,5 +1,4 @@
-
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { TrendingUp, TrendingDown, BarChart3, Target, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { StatisticDefinition, StatisticValue } from '../types';
 import {
