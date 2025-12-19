@@ -1,3 +1,8 @@
+// Попробуйте:
+import React from 'react';
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { StatisticValue } from '../types';
 import { format, subDays, addDays } from 'date-fns';
