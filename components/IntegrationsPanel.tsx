@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react'; // Добавлен useCallback
 import { Calendar, Mail, MessageSquare, Clock, Settings, CheckCircle2, X, ExternalLink } from 'lucide-react';
 import { Employee } from '../types';
 import { 
