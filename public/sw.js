@@ -61,13 +61,24 @@ self.addEventListener('fetch', (event) => {
             // Clone the response
             const responseToCache = response.clone();
 
-            caches.open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(event.request, responseToCache);
-              })
-              .catch((error) => {
-                console.warn('Cache put failed:', error);
-              });
+            // Only cache http(s) responses (avoid extension/internal schemes)
+            try {
+              const respUrl = new URL(responseToCache.url);
+              if (respUrl.protocol === 'http:' || respUrl.protocol === 'https:') {
+                caches.open(CACHE_NAME)
+                  .then((cache) => {
+                    return cache.put(event.request, responseToCache);
+                  })
+                  .catch((error) => {
+                    console.warn('Cache put failed:', error);
+                  });
+              } else {
+                // Skip caching responses with unsupported schemes
+                console.debug('Skipping cache.put for unsupported scheme:', respUrl.protocol, responseToCache.url);
+              }
+            } catch (e) {
+              console.warn('Skipping cache.put due to invalid URL:', e);
+            }
 
             return response;
           }
