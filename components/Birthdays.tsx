@@ -1,6 +1,4 @@
-
-import React, { useMemo } from 'react';
-import { ORGANIZATION_STRUCTURE } from '../constants';
+import React, { useMemo, useState, useCallback } from 'react'; // Добавлен useCallbackimport { ORGANIZATION_STRUCTURE } from '../constants';
 import { Employee as EmployeeType } from '../types';
 import { differenceInDays, format, isToday, addYears, isSameDay } from 'date-fns';
 import { Gift, Calendar, User, Bell, Sparkles, Mail, FileText } from 'lucide-react';
