@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Lock, Mail, ArrowRight, Loader2, ShieldCheck, WifiOff } from 'lucide-react';
 
