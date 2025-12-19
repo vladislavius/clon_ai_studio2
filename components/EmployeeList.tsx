@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useCallback } from 'react'; // Добавьте useCallback
 import { Employee as EmployeeType } from '../types';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Edit2, Trash2, User, Phone, Mail, MessageCircle, FileText, Printer, Hash } from 'lucide-react';
