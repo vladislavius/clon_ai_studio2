@@ -5,8 +5,13 @@ import { StatisticDefinition, StatisticValue, WiseCondition, Employee } from '..
 import { ORGANIZATION_STRUCTURE, HANDBOOK_STATISTICS } from '../constants';
 import StatsChart from './StatsChart';
 import ConfirmationModal from './ConfirmationModal';
-import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet, Target, Award, Crown } from 'lucide-react';
+import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet, Target, Award, Crown, FileText, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
+import { exportStatisticsToCSV, exportStatisticsToExcel } from '../utils/exportUtils';
+import AnalyticsDashboard from './AnalyticsDashboard';
+import { analyzeTrend, getFilteredValues } from '../utils/statistics';
+import { useToast } from './Toast';
+import { useErrorHandler } from '../utils/errorHandler';
 
 interface StatisticsTabProps {
   employees: Employee[];
@@ -43,25 +48,16 @@ const PERIODS = [
     { id: 'all', label: 'Все' },
 ];
 
-const analyzeTrend = (vals: StatisticValue[], inverted: boolean = false) => {
-    if (!vals || vals.length === 0) return { current: 0, prev: 0, delta: 0, percent: 0, direction: 'flat' as const, isGood: true };
-    const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    const n = sorted.length;
-    const current = sorted[n - 1].value;
-    const startOfPeriod = sorted[0].value; 
-    const prev = n > 1 ? startOfPeriod : 0;
-    const delta = current - prev;
-    let percent = prev === 0 ? (current === 0 ? 0 : 100) : (delta / Math.abs(prev)) * 100;
-    let direction: 'up' | 'down' | 'flat' = delta > 0 ? 'up' : (delta < 0 ? 'down' : 'flat');
-    let isGood = inverted ? delta <= 0 : delta >= 0;
-    return { current, prev, delta, percent, direction, isGood };
-};
+// analyzeTrend теперь импортируется из utils/statistics
 
 const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, selectedDeptId, isAdmin }) => {
+  const toast = useToast();
+  const { handleError } = useErrorHandler();
+  
   const [definitions, setDefinitions] = useState<StatisticDefinition[]>([]);
   const [allLatestValues, setAllLatestValues] = useState<Record<string, StatisticValue[]>>({});
   const [selectedPeriod, setSelectedPeriod] = useState<string>('3w');
-  const [displayMode, setDisplayMode] = useState<'dashboard' | 'list'>('dashboard');
+  const [displayMode, setDisplayMode] = useState<'dashboard' | 'list' | 'analytics'>('dashboard');
   const [expandedStatId, setExpandedStatId] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingStatDef, setEditingStatDef] = useState<Partial<StatisticDefinition> | null>(null);
@@ -82,93 +78,186 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   useEffect(() => { fetchDefinitions(); fetchAllValues(); }, [isOffline]); 
 
   const fetchDefinitions = async () => {
-    if (isOffline) { if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS); } 
-    else if (supabase) {
-        const { data } = await supabase.from('statistics_definitions').select('*').order('title');
+    try {
+      if (isOffline) { 
+        if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS); 
+      } else if (supabase) {
+        const { data, error } = await supabase.from('statistics_definitions').select('*').order('title');
+        if (error) {
+          handleError(error, 'Ошибка загрузки определений статистик');
+          return;
+        }
         if (data) setDefinitions(data);
+      }
+    } catch (error) {
+      handleError(error, 'Ошибка при получении статистик');
     }
   };
 
   const fetchAllValues = async () => {
-      if (isOffline) { if (Object.keys(allLatestValues).length === 0) setAllLatestValues(DEMO_VALUES); return; }
-      if (supabase) {
-          const { data } = await supabase.from('statistics_values').select('*');
-          if (data) {
-              const grouped: Record<string, StatisticValue[]> = {};
-              data.forEach((v: StatisticValue) => {
-                  if (!grouped[v.definition_id]) grouped[v.definition_id] = [];
-                  grouped[v.definition_id].push(v);
-              });
-              setAllLatestValues(grouped);
+      try {
+        if (isOffline) { 
+          if (Object.keys(allLatestValues).length === 0) setAllLatestValues(DEMO_VALUES); 
+          return; 
+        }
+        if (supabase) {
+          const { data, error } = await supabase.from('statistics_values').select('*');
+          if (error) {
+            handleError(error, 'Ошибка загрузки значений статистик');
+            return;
           }
+          if (data) {
+            const grouped: Record<string, StatisticValue[]> = {};
+            data.forEach((v: StatisticValue) => {
+              if (!grouped[v.definition_id]) grouped[v.definition_id] = [];
+              grouped[v.definition_id].push(v);
+            });
+            setAllLatestValues(grouped);
+          }
+        }
+      } catch (error) {
+        handleError(error, 'Ошибка при получении значений статистик');
       }
   };
 
   const handleExportStats = () => {
-      const csvRows = [['ID Статистики (Не менять)', 'Департамент', 'Название Статистики', 'Описание', 'Период', 'Текущее Значение', 'Динамика'].join(',')];
-      definitions.forEach(stat => {
-          const vals = getFilteredValues(stat.id);
-          const { current, percent, direction } = analyzeTrend(vals, stat.inverted);
-          const deptName = getOwnerName(stat.owner_id || '').replace(/,/g, '');
-          const title = stat.title.replace(/,/g, ' ');
-          const desc = (stat.description || '').replace(/,/g, ' ');
-          csvRows.push([stat.id, `"${deptName}"`, `"${title}"`, `"${desc}"`, selectedPeriod, current, `${percent.toFixed(1)}%`].join(','));
-      });
-      const csvContent = "\ufeff" + csvRows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `statistics_report_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-      a.click();
+      exportStatisticsToCSV(definitions, allLatestValues, selectedPeriod);
+  };
+
+  const handleExportExcel = () => {
+      try {
+        exportStatisticsToExcel(definitions, allLatestValues, selectedPeriod);
+        toast.success('Статистики экспортированы в Excel');
+      } catch (error) {
+        handleError(error, 'Ошибка при экспорте в Excel');
+      }
   };
 
   const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-          const content = ev.target?.result as string;
-          const lines = content.split('\n');
-          let importCount = 0;
-          for (let i = 1; i < lines.length; i++) {
+      
+      try {
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          try {
+            const content = ev.target?.result as string;
+            if (!content) {
+              toast.error('Файл пуст или не может быть прочитан');
+              return;
+            }
+            
+            const lines = content.split('\n');
+            let importCount = 0;
+            const errors: string[] = [];
+            
+            for (let i = 1; i < lines.length; i++) {
               if (!lines[i].trim()) continue;
-              const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-              const statId = cols[0]?.replace(/"/g, '').trim();
-              const dateInput = cols[9]?.replace(/"/g, '').trim(); // Custom logic for specific imports
-              const valInput = cols[10]?.replace(/"/g, '').trim();
-              if (statId && dateInput && valInput && !isNaN(parseFloat(valInput))) {
+              try {
+                const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                const statId = cols[0]?.replace(/"/g, '').trim();
+                const dateInput = cols[9]?.replace(/"/g, '').trim();
+                const valInput = cols[10]?.replace(/"/g, '').trim();
+                
+                if (statId && dateInput && valInput && !isNaN(parseFloat(valInput))) {
                   const payload = { definition_id: statId, date: dateInput, value: parseFloat(valInput) };
+                  
                   if (isOffline || !supabase) {
-                      setAllLatestValues(prev => { const existing = prev[statId] || []; return { ...prev, [statId]: [...existing, { ...payload, id: `local-${Date.now()}-${i}` }] }; });
-                  } else { await supabase.from('statistics_values').insert([payload]); }
+                    setAllLatestValues(prev => { 
+                      const existing = prev[statId] || []; 
+                      return { ...prev, [statId]: [...existing, { ...payload, id: `local-${Date.now()}-${i}` }] }; 
+                    });
+                  } else {
+                    const { error } = await supabase.from('statistics_values').insert([payload]);
+                    if (error) {
+                      errors.push(`Строка ${i + 1}: ${error.message}`);
+                      continue;
+                    }
+                  }
                   importCount++;
+                }
+              } catch (rowError) {
+                errors.push(`Строка ${i + 1}: ошибка парсинга`);
               }
+            }
+            
+            if (importCount > 0) {
+              toast.success(`Успешно импортировано значений: ${importCount}`);
+              await fetchAllValues();
+            }
+            
+            if (errors.length > 0) {
+              toast.warning(`Ошибки при импорте: ${errors.length} строк`);
+              console.warn('Ошибки импорта:', errors);
+            }
+          } catch (error) {
+            handleError(error, 'Ошибка при чтении CSV файла');
           }
-          if (importCount > 0) { alert(`Успешно импортировано значений: ${importCount}`); fetchAllValues(); }
-      };
-      reader.readAsText(file);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+        
+        reader.onerror = () => {
+          toast.error('Ошибка чтения файла');
+        };
+        
+        reader.readAsText(file);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (error) {
+        handleError(error, 'Ошибка при импорте CSV');
+      }
   };
 
   const handleSaveDefinition = async () => {
-    if (!editingStatDef || !editingStatDef.title || !editingStatDef.owner_id) return;
-    const payload = { title: editingStatDef.title, description: editingStatDef.description || '', type: editingStatDef.type || 'department', owner_id: editingStatDef.owner_id, inverted: editingStatDef.inverted || false, is_favorite: editingStatDef.is_favorite || false, is_double: editingStatDef.is_double || false, calculation_method: editingStatDef.calculation_method || '' };
+    if (!editingStatDef || !editingStatDef.title || !editingStatDef.owner_id) {
+      toast.warning('Заполните название и выберите владельца статистики');
+      return;
+    }
+    
+    const payload = { 
+      title: editingStatDef.title, 
+      description: editingStatDef.description || '', 
+      type: editingStatDef.type || 'department', 
+      owner_id: editingStatDef.owner_id, 
+      inverted: editingStatDef.inverted || false, 
+      is_favorite: editingStatDef.is_favorite || false, 
+      is_double: editingStatDef.is_double || false, 
+      calculation_method: editingStatDef.calculation_method || '' 
+    };
+    
     try {
-        if (isOffline || !supabase) {
-             const newDef = { ...payload, id: editingStatDef.id || `local-def-${Date.now()}` } as StatisticDefinition;
-             setDefinitions(prev => editingStatDef.id ? prev.map(d => d.id === editingStatDef.id ? newDef : d) : [...prev, newDef]);
-             if (selectedStatForValues?.id === editingStatDef.id) setSelectedStatForValues(newDef);
+      if (isOffline || !supabase) {
+        const newDef = { ...payload, id: editingStatDef.id || `local-def-${Date.now()}` } as StatisticDefinition;
+        setDefinitions(prev => editingStatDef.id ? prev.map(d => d.id === editingStatDef.id ? newDef : d) : [...prev, newDef]);
+        if (selectedStatForValues?.id === editingStatDef.id) setSelectedStatForValues(newDef);
+        toast.success('Статистика сохранена');
+      } else {
+        if (editingStatDef.id) {
+          const { error } = await supabase.from('statistics_definitions').update(payload).eq('id', editingStatDef.id);
+          if (error) {
+            handleError(error, 'Ошибка обновления статистики');
+            return;
+          }
         } else {
-            if (editingStatDef.id) { await supabase.from('statistics_definitions').update(payload).eq('id', editingStatDef.id); } 
-            else { await supabase.from('statistics_definitions').insert([payload]); }
-            await fetchDefinitions();
-            if (selectedStatForValues?.id === editingStatDef.id) {
-                 const { data } = await supabase.from('statistics_definitions').select('*').eq('id', editingStatDef.id).single();
-                 if (data) setSelectedStatForValues(data);
-            }
+          const { error } = await supabase.from('statistics_definitions').insert([payload]);
+          if (error) {
+            handleError(error, 'Ошибка создания статистики');
+            return;
+          }
         }
-        setEditingStatDef(null);
-    } catch (err) {}
+        await fetchDefinitions();
+        if (selectedStatForValues?.id === editingStatDef.id) {
+          const { data, error } = await supabase.from('statistics_definitions').select('*').eq('id', editingStatDef.id).single();
+          if (error) {
+            handleError(error, 'Ошибка получения обновленной статистики');
+          } else if (data) {
+            setSelectedStatForValues(data);
+          }
+        }
+        toast.success('Статистика сохранена');
+      }
+      setEditingStatDef(null);
+    } catch (err) {
+      handleError(err, 'Ошибка при сохранении статистики');
+    }
   };
 
   const openDeleteConfirm = (id: string) => {
@@ -200,21 +289,10 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       } catch (err) {}
   };
 
-  const getFilteredValues = (statId: string) => {
+  // Используем общую утилиту getFilteredValues из utils/statistics
+  const getFilteredValuesForStat = (statId: string) => {
       const vals = allLatestValues[statId] || [];
-      if (!vals.length) return [];
-      const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      const total = sorted.length;
-      switch (selectedPeriod) {
-          case '1w': return sorted.slice(Math.max(0, total - 2)); 
-          case '3w': return sorted.slice(Math.max(0, total - 4));
-          case '1m': return sorted.slice(Math.max(0, total - 5));
-          case '3m': return sorted.slice(Math.max(0, total - 13));
-          case '6m': return sorted.slice(Math.max(0, total - 26));
-          case '1y': return sorted.slice(Math.max(0, total - 52));
-          case 'all': return sorted;
-          default: return sorted.slice(Math.max(0, total - 13));
-      }
+      return getFilteredValues(vals, selectedPeriod as import('../utils/statistics').PeriodType);
   };
 
   const getOwnerName = (ownerId: string) => {
@@ -236,33 +314,83 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   };
 
   const handleSaveValue = async () => {
-      if (!editingValue || !selectedStatForValues) return;
-      const payload = { definition_id: selectedStatForValues.id, date: editingValue.date || new Date().toISOString().split('T')[0], value: editingValue.value || 0, value2: editingValue.value2 || 0 };
-      if (isOffline || !supabase) {
-           const newVal = { ...payload, id: editingValue.id || `local-val-${Date.now()}` } as StatisticValue;
-           const updatedList = editingValue.id ? currentStatValues.map(v => v.id === editingValue.id ? newVal : v) : [newVal, ...currentStatValues];
-           updatedList.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-           setCurrentStatValues(updatedList);
-           setAllLatestValues(prev => ({ ...prev, [selectedStatForValues.id]: updatedList }));
-      } else {
-          if (editingValue.id) { await supabase.from('statistics_values').update(payload).eq('id', editingValue.id); } 
-          else { await supabase.from('statistics_values').insert([payload]); }
-          const { data } = await supabase.from('statistics_values').select('*').eq('definition_id', selectedStatForValues.id).order('date', {ascending: false});
-          setCurrentStatValues(data || []);
-          fetchAllValues(); 
+      if (!editingValue || !selectedStatForValues) {
+        toast.warning('Заполните данные для сохранения');
+        return;
       }
-      setEditingValue({ definition_id: selectedStatForValues.id, date: new Date().toISOString().split('T')[0], value: 0, value2: 0 });
+      
+      try {
+        const payload = { 
+          definition_id: selectedStatForValues.id, 
+          date: editingValue.date || new Date().toISOString().split('T')[0], 
+          value: editingValue.value || 0, 
+          value2: editingValue.value2 || 0 
+        };
+        
+        if (isOffline || !supabase) {
+          const newVal = { ...payload, id: editingValue.id || `local-val-${Date.now()}` } as StatisticValue;
+          const updatedList = editingValue.id ? currentStatValues.map(v => v.id === editingValue.id ? newVal : v) : [newVal, ...currentStatValues];
+          updatedList.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          setCurrentStatValues(updatedList);
+          setAllLatestValues(prev => ({ ...prev, [selectedStatForValues.id]: updatedList }));
+          toast.success('Значение сохранено');
+        } else {
+          if (editingValue.id) {
+            const { error } = await supabase.from('statistics_values').update(payload).eq('id', editingValue.id);
+            if (error) {
+              handleError(error, 'Ошибка обновления значения');
+              return;
+            }
+          } else {
+            const { error } = await supabase.from('statistics_values').insert([payload]);
+            if (error) {
+              handleError(error, 'Ошибка сохранения значения');
+              return;
+            }
+          }
+          
+          const { data, error } = await supabase.from('statistics_values').select('*').eq('definition_id', selectedStatForValues.id).order('date', {ascending: false});
+          if (error) {
+            handleError(error, 'Ошибка получения значений');
+            return;
+          }
+          
+          setCurrentStatValues(data || []);
+          await fetchAllValues();
+          toast.success('Значение сохранено');
+        }
+        setEditingValue({ definition_id: selectedStatForValues.id, date: new Date().toISOString().split('T')[0], value: 0, value2: 0 });
+      } catch (err) {
+        handleError(err, 'Ошибка при сохранении значения');
+      }
   };
 
   const handleDeleteValue = async (id: string) => {
       if(!confirm("Удалить запись?")) return;
-      if(isOffline || !supabase) { setCurrentStatValues(prev => prev.filter(v => v.id !== id)); return; }
-      const { error } = await supabase.from('statistics_values').delete().eq('id', id);
-      if(!error) { setCurrentStatValues(prev => prev.filter(v => v.id !== id)); fetchAllValues(); }
+      
+      try {
+        if(isOffline || !supabase) { 
+          setCurrentStatValues(prev => prev.filter(v => v.id !== id)); 
+          toast.success('Значение удалено');
+          return; 
+        }
+        
+        const { error } = await supabase.from('statistics_values').delete().eq('id', id);
+        if(error) {
+          handleError(error, 'Ошибка удаления значения');
+          return;
+        }
+        
+        setCurrentStatValues(prev => prev.filter(v => v.id !== id));
+        await fetchAllValues();
+        toast.success('Значение удалено');
+      } catch (err) {
+        handleError(err, 'Ошибка при удалении значения');
+      }
   };
 
   const renderStatCard = (stat: StatisticDefinition, deptColor: string, contextKey: string) => {
-      const vals = getFilteredValues(stat.id);
+      const vals = getFilteredValuesForStat(stat.id);
       const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
       const trendColorHex = isGood ? "#10b981" : "#f43f5e"; 
       return (
@@ -453,12 +581,14 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                  <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
                      <button onClick={() => setDisplayMode('dashboard')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'dashboard' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><LayoutDashboard size={16}/> Дашборд</button>
                      <button onClick={() => setDisplayMode('list')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'list' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><List size={16}/> Список</button>
+                     <button onClick={() => setDisplayMode('analytics')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'analytics' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><BarChart3 size={16}/> Аналитика</button>
                  </div>
                  {isAdmin && (
                      <div className="flex items-center gap-2">
                          <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" accept=".csv" />
                          <button onClick={() => fileInputRef.current?.click()} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer" title="Импорт CSV"><Upload size={18} /></button>
-                         <button onClick={handleExportStats} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 cursor-pointer" title="Экспорт CSV"><Download size={18} /></button>
+                         <button onClick={handleExportStats} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 cursor-pointer" title="Экспорт CSV (Краткий)"><Download size={18} /></button>
+                         <button onClick={handleExportExcel} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 cursor-pointer" title="Экспорт Excel (Детальный)"><FileText size={18} /></button>
                          <button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-lg border transition-all cursor-pointer ${isEditMode ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`} title="Конструктор (Редактирование)"><Edit2 size={18}/></button>
                      </div>
                  )}
@@ -471,57 +601,78 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar px-1">
-              {displayMode === 'dashboard' ? renderDashboardView() : renderListView()}
+              {displayMode === 'dashboard' && renderDashboardView()}
+              {displayMode === 'list' && renderListView()}
+              {displayMode === 'analytics' && (
+                  <AnalyticsDashboard 
+                      definitions={definitions} 
+                      values={allLatestValues} 
+                      selectedPeriod={selectedPeriod} 
+                  />
+              )}
           </div>
 
           {/* STAT MODAL */}
           {expandedStatId && (
-               <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-2 md:p-4" onClick={() => setExpandedStatId(null)}>
-                   <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[95vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                       <div className="p-4 md:p-6 border-b border-slate-100 flex justify-between items-start gap-4">
+               <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-2 md:p-6" onClick={() => setExpandedStatId(null)}>
+                   <div className="bg-white rounded-3xl w-full max-w-6xl max-h-[95vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 border border-slate-200" onClick={e => e.stopPropagation()}>
+                       {/* Header - Fixed */}
+                       <div className="p-5 md:p-6 border-b border-slate-200 bg-white flex justify-between items-start gap-4 flex-shrink-0">
                            <div className="flex-1 min-w-0 pr-4">
-                               <h3 className="font-bold text-base md:text-xl text-slate-800 leading-tight break-words mb-1">{definitions.find(d => d.id === expandedStatId)?.title}</h3>
-                               <p className="text-xs text-slate-400 font-medium">{getOwnerName(definitions.find(d => d.id === expandedStatId)?.owner_id || '')}</p>
+                               <h3 className="font-bold text-lg md:text-2xl text-slate-800 leading-tight break-words mb-2">{definitions.find(d => d.id === expandedStatId)?.title}</h3>
+                               <p className="text-xs md:text-sm text-slate-500 font-medium">{getOwnerName(definitions.find(d => d.id === expandedStatId)?.owner_id || '')}</p>
                            </div>
-                           <div className="flex gap-2">
+                           <div className="flex gap-2 flex-shrink-0">
                                {isAdmin && (
-                                   <button onClick={() => openDeleteConfirm(expandedStatId)} className="p-2 text-red-400 hover:bg-red-50 rounded-full cursor-pointer"><Trash2 size={20}/></button>
+                                   <button onClick={() => openDeleteConfirm(expandedStatId)} className="p-2.5 text-red-400 hover:bg-red-50 rounded-xl cursor-pointer transition-colors" title="Удалить статистику"><Trash2 size={20}/></button>
                                )}
-                               <button onClick={() => setExpandedStatId(null)} className="p-2 hover:bg-slate-100 rounded-full flex-shrink-0 cursor-pointer"><X size={20}/></button>
+                               <button onClick={() => setExpandedStatId(null)} className="p-2.5 hover:bg-slate-100 rounded-xl flex-shrink-0 cursor-pointer transition-colors" title="Закрыть"><X size={20}/></button>
                            </div>
                        </div>
-                       <div className="flex-1 p-4 md:p-6 bg-slate-50 overflow-y-auto custom-scrollbar">
+                       {/* Content - Scrollable */}
+                       <div className="flex-1 p-5 md:p-8 bg-slate-50 overflow-y-auto custom-scrollbar min-h-0">
                             {(() => {
                                 const stat = definitions.find(d => d.id === expandedStatId);
                                 if (!stat) return null;
-                                const vals = getFilteredValues(stat.id);
+                                const vals = getFilteredValuesForStat(stat.id);
                                 const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
                                 return (
-                                    <div className="space-y-6">
-                                        <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl relative group">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <h4 className="text-[10px] font-bold text-blue-500 uppercase tracking-widest flex items-center gap-1"><Info size={12}/> Справка</h4>
+                                    <div className="space-y-6 max-w-5xl mx-auto">
+                                        {/* Description Card */}
+                                        <div className="p-5 md:p-6 bg-blue-50 border border-blue-200 rounded-2xl shadow-sm relative group">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <h4 className="text-xs font-bold text-blue-600 uppercase tracking-widest flex items-center gap-2"><Info size={14}/> Справка</h4>
                                                 {isAdmin && (
-                                                    <button onClick={() => setEditingStatDef(stat)} className="p-1.5 text-blue-400 hover:text-blue-600 bg-white rounded-lg shadow-sm cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 size={12}/></button>
+                                                    <button onClick={() => setEditingStatDef(stat)} className="p-2 text-blue-500 hover:text-blue-700 bg-white rounded-lg shadow-sm cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity border border-blue-200" title="Редактировать описание"><Edit2 size={14}/></button>
                                                 )}
                                             </div>
-                                            <p className="text-sm font-medium text-blue-900 leading-relaxed whitespace-pre-wrap">{stat.description || 'Описание отсутствует. Добавьте его через конструктор.'}</p>
+                                            <p className="text-sm md:text-base font-medium text-blue-900 leading-relaxed whitespace-pre-wrap">{stat.description || 'Описание отсутствует. Добавьте его через конструктор.'}</p>
                                         </div>
-                                        <div className="flex flex-col sm:flex-row gap-4">
-                                            <div className="p-4 bg-white rounded-2xl shadow-sm border border-slate-200 flex-1">
-                                                <div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Текущее значение</div>
-                                                <div className="text-3xl font-black text-slate-900">{current.toLocaleString()}</div>
+                                        {/* Stats Cards */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+                                            <div className="p-5 md:p-6 bg-white rounded-2xl shadow-md border border-slate-200">
+                                                <div className="text-xs text-slate-500 font-bold uppercase mb-2 tracking-wider">Текущее значение</div>
+                                                <div className="text-3xl md:text-4xl font-black text-slate-900">{current.toLocaleString()}</div>
                                             </div>
-                                            <div className="p-4 bg-white rounded-2xl shadow-sm border border-slate-200 flex-1">
-                                                <div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Динамика периода</div>
-                                                <div className={`text-2xl font-bold flex items-center gap-2 ${isGood ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                    {direction === 'up' ? <TrendingUp size={24}/> : (direction === 'down' ? <TrendingDown size={24}/> : <Minus size={24}/>)}
+                                            <div className="p-5 md:p-6 bg-white rounded-2xl shadow-md border border-slate-200">
+                                                <div className="text-xs text-slate-500 font-bold uppercase mb-2 tracking-wider">Динамика периода</div>
+                                                <div className={`text-2xl md:text-3xl font-bold flex items-center gap-2 ${isGood ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                    {direction === 'up' ? <TrendingUp size={28}/> : (direction === 'down' ? <TrendingDown size={28}/> : <Minus size={28}/>)}
                                                     {Math.abs(percent).toFixed(1)}%
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="h-64 md:h-96 bg-white rounded-2xl border border-slate-200 shadow-sm p-2 md:p-4"><StatsChart values={vals} inverted={stat.inverted} isDouble={stat.is_double} /></div>
-                                        {isAdmin && <button onClick={() => { setExpandedStatId(null); handleOpenValues(stat); }} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 cursor-pointer hover:bg-blue-700 transition-all uppercase tracking-wider text-sm">Редактировать данные (Ввод)</button>}
+                                        {/* Chart Card */}
+                                        <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 md:p-6">
+                                            <div className="text-xs text-slate-500 font-bold uppercase mb-3 tracking-wider">График динамики</div>
+                                            <div className="h-72 md:h-96 lg:h-[450px] w-full"><StatsChart values={vals} inverted={stat.inverted} isDouble={stat.is_double} /></div>
+                                        </div>
+                                        {/* Action Button */}
+                                        {isAdmin && (
+                                            <button onClick={() => { setExpandedStatId(null); handleOpenValues(stat); }} className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 cursor-pointer hover:bg-blue-700 transition-all uppercase tracking-wider text-sm md:text-base">
+                                                Редактировать данные (Ввод)
+                                            </button>
+                                        )}
                                     </div>
                                 );
                             })()}

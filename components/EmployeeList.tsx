@@ -4,6 +4,7 @@ import { Employee as EmployeeType } from '../types';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Edit2, Trash2, User, Phone, Mail, MessageCircle, FileText, Printer, Hash } from 'lucide-react';
 import { format } from 'date-fns';
+import { exportEmployeeToPDF } from '../utils/exportUtils';
 
 interface EmployeeListProps {
   employees: EmployeeType[];
@@ -27,6 +28,12 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
     const dept = ORGANIZATION_STRUCTURE[deptId];
     if (!dept || !dept.departments) return '';
     return dept.departments[subDeptId]?.name || '';
+  };
+
+  // --- PDF EXPORT LOGIC ---
+  const quickExportPDF = (e: React.MouseEvent, emp: EmployeeType) => {
+    e.stopPropagation();
+    exportEmployeeToPDF(emp);
   };
 
   // --- FULL TXT EXPORT LOGIC ---
@@ -311,16 +318,23 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
 
             <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                <button 
+                  onClick={(e) => quickExportPDF(e, emp)}
+                  className="p-1.5 bg-white/90 hover:bg-red-50 text-red-500 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
+                  title="Экспорт PDF"
+                >
+                  <FileText size={14} />
+                </button>
+                <button 
                   onClick={(e) => quickExportTxt(e, emp)}
                   className="p-1.5 bg-white/90 hover:bg-white text-slate-500 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
-                  title="Export Full TXT"
+                  title="Экспорт TXT"
                 >
                   <FileText size={14} />
                 </button>
                 <button 
                   onClick={(e) => quickPrint(e, emp)}
                   className="p-1.5 bg-white/90 hover:bg-white text-slate-500 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
-                  title="Print Full Dossier"
+                  title="Печать"
                 >
                   <Printer size={14} />
                 </button>

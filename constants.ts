@@ -134,6 +134,14 @@ export const ORGANIZATION_STRUCTURE: { [key: string]: Department } = {
   }
 };
 
+// --- CONSTANTS FOR MAGIC NUMBERS ---
+export const MIN_VALUES_FOR_TREND = 2;
+export const MIN_SUPABASE_KEY_LENGTH = 20;
+export const DEFAULT_DEPT_SORT_INDEX = 999; // Used when department is not found in sort order
+
+// --- DEPARTMENT SORT ORDER ---
+export const DEPT_SORT_ORDER = ['owner', 'dept7', 'dept1', 'dept2', 'dept3', 'dept4', 'dept5', 'dept6'];
+
 // ROLE_STAT_TEMPLATES is used as a fallback for statistic templates based on sub-department IDs to fix the import error in EmployeeModal.tsx.
 export const ROLE_STAT_TEMPLATES: Record<string, any[]> = {};
 

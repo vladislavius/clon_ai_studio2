@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
 import ImportExport from './ImportExport';
+import IntegrationsPanel from './IntegrationsPanel';
 import { Employee } from '../types';
-import { Database, Settings as SettingsIcon, Globe, Save } from 'lucide-react';
+import { Database, Settings as SettingsIcon, Globe, Save, Plug } from 'lucide-react';
 
 interface SettingsProps {
     employees: Employee[];
@@ -10,7 +11,7 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ employees, onImport }) => {
-    const [activeTab, setActiveTab] = useState<'general' | 'database'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'database' | 'integrations'>('general');
     
     // Mock settings state
     const [companyName, setCompanyName] = useState('Остров Сокровищ');
@@ -46,6 +47,13 @@ const Settings: React.FC<SettingsProps> = ({ employees, onImport }) => {
                         >
                             <Database size={14} />
                             База Данных
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('integrations')}
+                            className={`flex-shrink-0 px-4 py-2 text-xs font-bold rounded-lg transition-all border flex items-center gap-2 ${activeTab === 'integrations' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}
+                        >
+                            <Plug size={14} />
+                            Интеграции
                         </button>
                     </div>
                 </div>
@@ -103,6 +111,11 @@ const Settings: React.FC<SettingsProps> = ({ employees, onImport }) => {
                 {activeTab === 'database' && (
                     <div className="h-full overflow-y-auto p-4 md:p-6 custom-scrollbar">
                         <ImportExport employees={employees} onImport={onImport} />
+                    </div>
+                )}
+                {activeTab === 'integrations' && (
+                    <div className="h-full overflow-y-auto p-4 md:p-6 custom-scrollbar">
+                        <IntegrationsPanel employees={employees} isAdmin={true} />
                     </div>
                 )}
             </div>

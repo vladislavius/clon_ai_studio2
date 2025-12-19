@@ -24,7 +24,13 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   // Local edit state for the drawer
-  const [editBuffer, setEditBuffer] = useState<any>(null);
+  interface EditBuffer {
+    deptId?: string;
+    subDeptId?: string;
+    field: 'goal' | 'vfp' | 'description' | 'manager';
+    value: string;
+  }
+  const [editBuffer, setEditBuffer] = useState<EditBuffer | null>(null);
   const [companyEditMode, setCompanyEditMode] = useState<'goal' | 'vfp' | null>(null);
   const [companyValue, setCompanyValue] = useState('');
 

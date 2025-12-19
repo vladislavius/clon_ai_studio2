@@ -1,0 +1,47 @@
+{
+  "name": "HR System Pro",
+  "short_name": "HR Pro",
+  "description": "Professional employee management system with organizational charts, birthday tracking, and digital personnel files",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Сотрудники",
+      "short_name": "Сотрудники",
+      "description": "Просмотр списка сотрудников",
+      "url": "/?view=employees",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Статистики",
+      "short_name": "Статистики",
+      "description": "Просмотр статистик",
+      "url": "/?view=statistics",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ]
+}
+

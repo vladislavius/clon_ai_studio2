@@ -7,6 +7,10 @@ import { supabase } from '../supabaseClient';
 import StatsChart from './StatsChart';
 import { format, subDays, getDay } from 'date-fns';
 import ConfirmationModal from './ConfirmationModal';
+import { validateEmail, validatePhone, validateDate, validateBirthDate, validateTelegram, getValidationError } from '../utils/validation';
+import { analyzeTrend, getFilteredValues } from '../utils/statistics';
+import { useToast } from './Toast';
+import { useErrorHandler } from '../utils/errorHandler';
 
 interface EmployeeModalProps {
   isOpen: boolean;
@@ -86,42 +90,7 @@ const PERIODS = [
     { id: 'all', label: 'Все' },
 ];
 
-const analyzeTrend = (vals: StatisticValue[], inverted: boolean = false) => {
-    if (!vals || vals.length === 0) {
-        return { current: 0, prev: 0, delta: 0, percent: 0, direction: 'flat' as const, isGood: true };
-    }
-
-    const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    const n = sorted.length;
-
-    // Use PERIOD Based Trend (End vs Start)
-    const current = sorted[n - 1].value;
-    const startOfPeriod = sorted[0].value; 
-    
-    const prev = n > 1 ? startOfPeriod : 0; 
-
-    const delta = current - prev;
-    
-    let percent = 0;
-    if (prev === 0) {
-        percent = current === 0 ? 0 : 100;
-    } else {
-        percent = (delta / Math.abs(prev)) * 100;
-    }
-
-    let direction: 'up' | 'down' | 'flat' = 'flat';
-    if (delta > 0) direction = 'up';
-    if (delta < 0) direction = 'down';
-
-    let isGood = true;
-    if (inverted) {
-        isGood = delta <= 0;
-    } else {
-        isGood = delta >= 0;
-    }
-
-    return { current, prev, delta, percent, direction, isGood };
-};
+// analyzeTrend и getFilteredValues теперь импортируются из utils/statistics
 
 // Helper to get nearest previous Thursday (Start of Fiscal Week)
 const getNearestThursday = () => {
@@ -169,6 +138,8 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
   const isNewEmployee = !initialData;
 
   useEffect(() => {
+    let isMounted = true;
+    
     if (isOpen) {
       if (initialData) {
         setFormData(prev => {
@@ -177,20 +148,28 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
             }
             return { ...DEFAULT_EMPLOYEE, ...initialData };
         });
-        fetchPersonalStats(initialData.id);
+        if (isMounted) {
+          fetchPersonalStats(initialData.id);
+        }
       } else {
         setFormData({ ...DEFAULT_EMPLOYEE, id: crypto.randomUUID(), created_at: new Date().toISOString() });
         setStatsDefinitions([]);
         setStatsValues([]);
       }
-      setActiveTab('general');
-      setStatsPeriod('3w');
-      setInfoStatId(null);
-      setShowStatManager(false);
-      setEditingStatId(null);
-      setHistoryStatId(null);
-      setNewStatDate(getNearestThursday());
+      if (isMounted) {
+        setActiveTab('general');
+        setStatsPeriod('3w');
+        setInfoStatId(null);
+        setShowStatManager(false);
+        setEditingStatId(null);
+        setHistoryStatId(null);
+        setNewStatDate(getNearestThursday());
+      }
     }
+    
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, initialData?.id]);
 
   const fetchPersonalStats = async (empId: string) => {
@@ -226,8 +205,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
 
   const handleCreatePersonalStat = async (template?: Partial<StatisticDefinition>) => {
       const titleToUse = template?.title || newStatData.title;
-      if (!titleToUse) { console.warn("Введите название статистики"); return; }
-      if (!supabase) return;
+      if (!titleToUse) { 
+        toast.warning("Введите название статистики"); 
+        return; 
+      }
+      if (!supabase) {
+        toast.error('База данных не настроена');
+        return;
+      }
 
       const newStat: Partial<StatisticDefinition> = {
           title: titleToUse,
@@ -243,17 +228,21 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
         const { data, error } = await supabase.from('statistics_definitions').insert([newStat]).select();
         
         if (error) {
-            console.error("Failed to create stat:", error);
-        } else if (data && data.length > 0) {
-            const createdStat = data[0];
-            if (createdStat && createdStat.id) {
-                setStatsDefinitions(prev => [...prev, createdStat]);
-                setShowStatManager(false);
-                setNewStatData({ title: '', description: '', inverted: false, is_double: false, calculation_method: '' });
-            }
+          handleError(error, 'Ошибка создания статистики');
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          const createdStat = data[0];
+          if (createdStat && createdStat.id) {
+            setStatsDefinitions(prev => [...prev, createdStat]);
+            setShowStatManager(false);
+            setNewStatData({ title: '', description: '', inverted: false, is_double: false, calculation_method: '' });
+            toast.success('Статистика создана');
+          }
         }
       } catch (err) {
-          console.error("Crash prevented in stat creation:", err);
+        handleError(err, 'Ошибка при создании статистики');
       }
   };
 
@@ -268,53 +257,86 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
 
   const handleDeleteStat = async (statId: string) => {
       setConfirmModal(prev => ({ ...prev, isOpen: false }));
-      if (!supabase) return;
+      if (!supabase) {
+        toast.error('База данных не настроена');
+        return;
+      }
 
-      // 1. Delete values
-      await supabase.from('statistics_values').delete().eq('definition_id', statId);
-      // 2. Delete definition
-      const { error } = await supabase.from('statistics_definitions').delete().eq('id', statId);
+      try {
+        // 1. Delete values
+        const { error: valuesError } = await supabase.from('statistics_values').delete().eq('definition_id', statId);
+        if (valuesError) {
+          handleError(valuesError, 'Ошибка удаления значений статистики');
+          return;
+        }
+        
+        // 2. Delete definition
+        const { error } = await supabase.from('statistics_definitions').delete().eq('id', statId);
 
-      if (error) {
-          console.error("Ошибка удаления: " + error.message);
-      } else {
+        if (error) {
+          handleError(error, 'Ошибка удаления статистики');
+        } else {
           setStatsDefinitions(prev => prev.filter(s => s.id !== statId));
+          toast.success('Статистика удалена');
+        }
+      } catch (err) {
+        handleError(err, 'Ошибка при удалении статистики');
       }
   };
 
   const handleDeleteValue = async (valId: string) => {
       if(!confirm("Удалить это значение?")) return;
-      if (!supabase) {
+      
+      try {
+        if (!supabase) {
           setStatsValues(prev => prev.filter(v => v.id !== valId));
+          toast.success('Значение удалено');
           return;
-      }
-      const { error } = await supabase.from('statistics_values').delete().eq('id', valId);
-      if(!error) {
-          setStatsValues(prev => prev.filter(v => v.id !== valId));
+        }
+        
+        const { error } = await supabase.from('statistics_values').delete().eq('id', valId);
+        if(error) {
+          handleError(error, 'Ошибка удаления значения');
+          return;
+        }
+        
+        setStatsValues(prev => prev.filter(v => v.id !== valId));
+        toast.success('Значение удалено');
+      } catch (err) {
+        handleError(err, 'Ошибка при удалении значения');
       }
   };
 
   const handleUpdateStat = async () => {
-      if (!editingStatId || !supabase) return;
+      if (!editingStatId || !supabase) {
+        toast.warning('Выберите статистику для редактирования');
+        return;
+      }
+      
+      if (!newStatData.title) {
+        toast.warning('Введите название статистики');
+        return;
+      }
       
       try {
-          const { error } = await supabase.from('statistics_definitions').update({
-              title: newStatData.title,
-              description: newStatData.description,
-              inverted: newStatData.inverted,
-              is_double: newStatData.is_double,
-              calculation_method: newStatData.calculation_method
-          }).eq('id', editingStatId);
+        const { error } = await supabase.from('statistics_definitions').update({
+          title: newStatData.title,
+          description: newStatData.description,
+          inverted: newStatData.inverted,
+          is_double: newStatData.is_double,
+          calculation_method: newStatData.calculation_method
+        }).eq('id', editingStatId);
 
-          if (error) {
-              console.error("Ошибка обновления: ", error);
-          } else {
-              setStatsDefinitions(prev => prev.map(s => s.id === editingStatId ? { ...s, ...newStatData } : s));
-              setEditingStatId(null);
-              setNewStatData({ title: '', description: '', inverted: false, is_double: false, calculation_method: '' });
-          }
+        if (error) {
+          handleError(error, 'Ошибка обновления статистики');
+        } else {
+          setStatsDefinitions(prev => prev.map(s => s.id === editingStatId ? { ...s, ...newStatData } : s));
+          setEditingStatId(null);
+          setNewStatData({ title: '', description: '', inverted: false, is_double: false, calculation_method: '' });
+          toast.success('Статистика обновлена');
+        }
       } catch (err) {
-          console.error("Crash prevented in handleUpdateStat", err);
+        handleError(err, 'Ошибка при обновлении статистики');
       }
   };
 
@@ -329,58 +351,71 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
       });
   };
 
-  const getFilteredValues = (statId: string) => {
+  // Используем общую утилиту getFilteredValues из utils/statistics
+  const getFilteredValuesForStat = (statId: string) => {
       const vals = statsValues.filter(v => v.definition_id === statId);
-      if (!vals.length) return [];
-      
-      const sorted = [...vals].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      const total = sorted.length;
-
-      switch (statsPeriod) {
-          case '1w': return sorted.slice(Math.max(0, total - 2)); 
-          case '3w': return sorted.slice(Math.max(0, total - 4)); 
-          case '1m': return sorted.slice(Math.max(0, total - 5)); 
-          case '3m': return sorted.slice(Math.max(0, total - 13)); 
-          case '6m': return sorted.slice(Math.max(0, total - 26));
-          case '1y': return sorted.slice(Math.max(0, total - 52));
-          case 'all': return sorted;
-          default: return sorted.slice(Math.max(0, total - 13));
-      }
+      return getFilteredValues(vals, statsPeriod as import('../utils/statistics').PeriodType);
   };
 
   const handleAddValue = async (statId: string, isDouble: boolean) => {
-      const valStr = newValueInput[statId];
-      if (!valStr) return;
-      const val = parseFloat(valStr);
-      let val2 = 0;
-      if (isDouble && newValueInput2[statId]) {
-          val2 = parseFloat(newValueInput2[statId]);
-      }
+      try {
+          const valStr = newValueInput[statId];
+          if (!valStr) {
+              toast.warning('Введите значение');
+              return;
+          }
+          
+          const val = parseFloat(valStr);
+          if (isNaN(val)) {
+              toast.error('Неверное числовое значение');
+              return;
+          }
+          
+          let val2 = 0;
+          if (isDouble && newValueInput2[statId]) {
+              val2 = parseFloat(newValueInput2[statId]);
+              if (isNaN(val2)) {
+                  toast.error('Неверное значение для второго параметра');
+                  return;
+              }
+          }
 
-      const date = newStatDate; 
+          const date = newStatDate;
+          if (!validateDate(date)) {
+              toast.error('Неверная дата');
+              return;
+          }
 
-      if (isDemoStats || !supabase) {
-          const newVal: StatisticValue = {
-              id: `local-${Date.now()}`,
-              definition_id: statId,
-              date: date,
-              value: val,
-              value2: val2
-          };
-          setStatsValues(prev => [...prev, newVal]);
-          setNewValueInput(prev => ({...prev, [statId]: ''}));
-          if(isDouble) setNewValueInput2(prev => ({...prev, [statId]: ''}));
-          return;
-      }
+          if (isDemoStats || !supabase) {
+              const newVal: StatisticValue = {
+                  id: `local-${Date.now()}`,
+                  definition_id: statId,
+                  date: date,
+                  value: val,
+                  value2: val2
+              };
+              setStatsValues(prev => [...prev, newVal]);
+              setNewValueInput(prev => ({...prev, [statId]: ''}));
+              if(isDouble) setNewValueInput2(prev => ({...prev, [statId]: ''}));
+              toast.success('Значение добавлено');
+              return;
+          }
 
-      const { data, error } = await supabase.from('statistics_values').insert([{ definition_id: statId, value: val, value2: val2, date: date }]).select();
-      
-      if (!error && data && data.length > 0) {
-          setStatsValues(prev => [...prev, data[0]]);
-          setNewValueInput(prev => ({...prev, [statId]: ''}));
-          if(isDouble) setNewValueInput2(prev => ({...prev, [statId]: ''}));
-      } else {
-          console.error("Ошибка сохранения значения:", error);
+          const { data, error } = await supabase.from('statistics_values').insert([{ definition_id: statId, value: val, value2: val2, date: date }]).select();
+          
+          if (error) {
+              handleError(error, 'Ошибка сохранения значения статистики');
+              return;
+          }
+          
+          if (data && data.length > 0) {
+              setStatsValues(prev => [...prev, data[0]]);
+              setNewValueInput(prev => ({...prev, [statId]: ''}));
+              if(isDouble) setNewValueInput2(prev => ({...prev, [statId]: ''}));
+              toast.success('Значение сохранено');
+          }
+      } catch (error) {
+          handleError(error, 'Ошибка при добавлении значения');
       }
   };
 
@@ -468,8 +503,41 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
 
   const handleSubmit = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
-    if(isUploading) return;
-    onSave({ ...formData, updated_at: new Date().toISOString() });
+    if(isUploading) {
+      toast.warning('Дождитесь завершения загрузки файлов');
+      return;
+    }
+    
+    // Валидация обязательных полей
+    if (!formData.full_name || formData.full_name.trim().length === 0) {
+      toast.error('Введите ФИО сотрудника');
+      return;
+    }
+    
+    // Валидация email если указан
+    if (formData.email && !validateEmail(formData.email)) {
+      toast.error('Неверный формат email');
+      return;
+    }
+    
+    // Валидация телефона если указан
+    if (formData.phone && !validatePhone(formData.phone)) {
+      toast.error('Неверный формат телефона');
+      return;
+    }
+    
+    // Валидация даты рождения если указана
+    if (formData.birth_date && !validateBirthDate(formData.birth_date)) {
+      toast.error('Неверная дата рождения');
+      return;
+    }
+    
+    try {
+      onSave({ ...formData, updated_at: new Date().toISOString() });
+      toast.success('Сотрудник сохранен');
+    } catch (error) {
+      handleError(error, 'Ошибка при сохранении сотрудника');
+    }
   };
 
   if (!isOpen) return null;
@@ -846,7 +914,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
 
                                 {statsDefinitions.map(stat => {
                                     if (!stat) return null;
-                                    const vals = getFilteredValues(stat.id);
+                                    const vals = getFilteredValuesForStat(stat.id);
                                     const { direction, percent, current, isGood } = analyzeTrend(vals, stat.inverted);
                                     
                                     const trendColorHex = isGood ? "#10b981" : "#f43f5e";
@@ -955,7 +1023,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                       <button onClick={() => setHistoryStatId(null)}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
                   </div>
                   <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
-                      {getFilteredValues(historyStatId).length === 0 ? (
+                      {getFilteredValuesForStat(historyStatId).length === 0 ? (
                           <div className="p-8 text-center text-slate-400 text-sm">Нет записей</div>
                       ) : (
                           <table className="w-full text-sm">
@@ -963,7 +1031,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                   <tr><th className="px-4 py-3 text-left">Дата</th><th className="px-4 py-3 text-right">Значение</th><th className="px-4 py-3 text-right"></th></tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                  {getFilteredValues(historyStatId).slice().reverse().map(val => (
+                                  {getFilteredValuesForStat(historyStatId).slice().reverse().map(val => (
                                       <tr key={val.id} className="hover:bg-slate-50 transition-colors">
                                           <td className="px-4 py-3 text-slate-600 font-medium">{format(new Date(val.date), 'dd.MM.yy')}</td>
                                           <td className="px-4 py-3 text-right font-bold text-slate-800">{val.value.toLocaleString()}</td>

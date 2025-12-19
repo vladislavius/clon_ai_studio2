@@ -3,7 +3,9 @@ import React, { useMemo } from 'react';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Employee as EmployeeType } from '../types';
 import { differenceInDays, format, isToday, addYears, isSameDay } from 'date-fns';
-import { Gift, Calendar, User, Bell, Sparkles } from 'lucide-react';
+import { Gift, Calendar, User, Bell, Sparkles, Mail, FileText } from 'lucide-react';
+import { openBirthdayEmail, getTodayBirthdays, getUpcomingBirthdays } from '../utils/notifications';
+import { exportEmployeesToCSV } from '../utils/exportUtils';
 
 interface BirthdaysProps {
   employees: EmployeeType[];
@@ -102,6 +104,29 @@ const Birthdays: React.FC<BirthdaysProps> = ({ employees }) => {
             </div>
             <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm"><User size={32} className="text-white" /></div>
           </div>
+        </div>
+      </div>
+
+      {/* Actions Bar */}
+      <div className="flex flex-wrap gap-3 items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-slate-600">Действия:</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => openBirthdayEmail(employees)}
+            className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-sm hover:bg-blue-700 transition-all shadow-sm flex items-center gap-2"
+            title="Открыть почтовый клиент с уведомлением о днях рождения"
+          >
+            <Mail size={16} /> Email уведомление
+          </button>
+          <button
+            onClick={() => exportEmployeesToCSV(employees)}
+            className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl text-sm hover:bg-emerald-700 transition-all shadow-sm flex items-center gap-2"
+            title="Экспортировать список сотрудников в CSV"
+          >
+            <FileText size={16} /> Экспорт CSV
+          </button>
         </div>
       </div>
 

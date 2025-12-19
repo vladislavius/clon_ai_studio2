@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Users, Briefcase, Cake, FileDown, Plus, Search, Menu, LayoutGrid, Database, Settings as SettingsIcon, Loader2, LogOut, TrendingUp, WifiOff, Network, List, ChevronLeft, ChevronRight, X, Shield, Edit3, Lock, Filter } from 'lucide-react';
 import EmployeeList from './components/EmployeeList';
 import EmployeeModal from './components/EmployeeModal';
@@ -9,9 +9,12 @@ import StatisticsTab from './components/StatisticsTab';
 import OrgChart from './components/OrgChart';
 import Auth from './components/Auth';
 import ConfirmationModal from './components/ConfirmationModal';
-import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS } from './constants';
-import { Employee, ViewMode, Attachment, Department } from './types';
-import { supabase } from './supabaseClient';
+import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS, DEPT_SORT_ORDER } from './constants';
+import { Employee, ViewMode, Department } from './types';
+import { useAuth } from './hooks/useAuth';
+import { useEmployees } from './hooks/useEmployees';
+import { useOrgStructure } from './hooks/useOrgStructure';
+import { useEmployeeFilters } from './hooks/useEmployeeFilters';
 
 const DEMO_EMPLOYEES: Employee[] = [
   {
@@ -66,17 +69,13 @@ const DEMO_EMPLOYEES: Employee[] = [
   }
 ];
 
-const DEPT_SORT_ORDER = ['owner', 'dept7', 'dept1', 'dept2', 'dept3', 'dept4', 'dept5', 'dept6'];
-
 function App() {
-  const [session, setSession] = useState<any>(null);
-  const [authChecking, setAuthChecking] = useState(true);
-  const [isOffline, setIsOffline] = useState(false);
+  // Custom hooks
+  const { session, authChecking, isOffline, isAdmin, setIsOffline, handleBypassAuth, handleLogout } = useAuth();
+  const { employees, isLoading, fetchEmployees, handleSaveEmployee, handleDeleteEmployee, handleImportData, setEmployees } = useEmployees();
+  const { orgStructure, fetchOrgMetadata, handleUpdateOrgStructure } = useOrgStructure();
   
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [orgStructure, setOrgStructure] = useState<Record<string, Department>>(ORGANIZATION_STRUCTURE);
-  const [isLoading, setIsLoading] = useState(false);
-  
+  // UI state
   const [currentView, setCurrentView] = useState<ViewMode>('org_chart'); 
   const [employeeSubView, setEmployeeSubView] = useState<'list' | 'birthdays'>('list');
   const [searchTerm, setSearchTerm] = useState('');
@@ -95,287 +94,114 @@ function App() {
       onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  const isAdmin = isOffline || (session?.user?.email && ADMIN_EMAILS.includes(session.user.email));
-
+  // Fetch data when session is available
   useEffect(() => {
-    if (isOffline) {
-        setAuthChecking(false);
-        return;
-    }
-    if (!supabase) {
-        setAuthChecking(false);
-        return;
-    }
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthChecking(false);
-      if (session) {
+    if (session && !isOffline) {
           fetchEmployees();
-          fetchOrgMetadata();
-      }
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) {
-          fetchEmployees();
-          fetchOrgMetadata();
-      } else {
+          fetchOrgMetadata(isOffline);
+    } else if (!session && !isOffline) {
           setEmployees([]);
-          setOrgStructure(ORGANIZATION_STRUCTURE);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [isOffline]);
-
-  const fetchOrgMetadata = async () => {
-      if (!supabase || isOffline) return;
-      try {
-          const { data, error } = await supabase.from('org_metadata').select('*');
-          if (data && data.length > 0) {
-              const dbOrg: Record<string, Department> = { ...ORGANIZATION_STRUCTURE };
-              data.forEach((item: any) => {
-                  if (item.type === 'company' && dbOrg['owner']) {
-                      dbOrg['owner'].goal = item.goal;
-                      dbOrg['owner'].vfp = item.vfp;
-                      dbOrg['owner'].manager = item.manager || dbOrg['owner'].manager;
-                  } else if (item.type === 'department' && dbOrg[item.node_id]) {
-                      dbOrg[item.node_id] = { ...dbOrg[item.node_id], ...item.content };
-                  } else if (item.type === 'subdepartment') {
-                      for (const d in dbOrg) {
-                          if (dbOrg[d].departments && dbOrg[d].departments![item.node_id]) {
-                              dbOrg[d].departments![item.node_id] = { ...dbOrg[d].departments![item.node_id], ...item.content };
-                          }
-                      }
-                  }
-              });
-              setOrgStructure(dbOrg);
-          }
-      } catch (err) {
-          console.warn("Table org_metadata not found or inaccessible. Using default structure.");
-      }
-  };
-
-  const handleUpdateOrgStructure = async (newStruct: Record<string, Department>) => {
-      setOrgStructure(newStruct);
-      if (!isAdmin || isOffline || !supabase) return;
-
-      // Persistence logic
-      try {
-          // Flatten changes to save to DB (Saving simplified for brevity)
-          // In real production, we'd save each changed node to the 'org_metadata' table
-          // Here we perform a simplified upsert for the modified node if possible
-      } catch (err) { console.error("Failed to save org structure", err); }
-  };
-
-  const handleBypassAuth = () => {
-      setIsOffline(true);
-      setSession({ user: { email: ADMIN_EMAILS[0] } });
-      setEmployees(DEMO_EMPLOYEES);
-      setAuthChecking(false);
-  };
-
-  const fetchEmployees = async () => {
-    if (isOffline) return;
-    setIsLoading(true);
-    if (!supabase) return;
-    try {
-      const { data: employeesData, error: employeesError } = await supabase.from('employees').select('*').order('created_at', { ascending: false });
-      if (employeesError) throw employeesError;
-      
-      let attachmentsData: any[] = [];
-      try {
-          const { data: att, error: attError } = await supabase.from('employee_attachments').select('*');
-          if (!attError && att) attachmentsData = att;
-      } catch (err) {
-          console.warn("Could not fetch attachments, continuing without them.", err);
-      }
-
-      if (employeesData) {
-        const mergedEmployees = employeesData.map((emp: any) => ({
-          ...emp,
-          attachments: attachmentsData.filter((att: any) => att.employee_id === emp.id)
-        }));
-        setEmployees(mergedEmployees as Employee[]);
-      }
-    } catch (error: any) {
-      console.error('Error fetching employees:', error);
-      console.error('Ошибка загрузки сотрудников: ' + error.message);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [session, isOffline, fetchEmployees, fetchOrgMetadata, setEmployees]);
 
-  const handleLogout = async () => {
-      if (isOffline) { setIsOffline(false); setSession(null); setEmployees([]); return; }
-      if (!supabase) return;
-      await supabase.auth.signOut();
-      setSession(null);
-  };
+  // Employee filters hook (уже мемоизирован внутри)
+  const { filteredEmployees } = useEmployeeFilters({ employees, searchTerm, deptFilter });
 
-  const filteredEmployees = employees
-    .filter(emp => {
-        const matchesSearch = emp.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                              emp.position.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesDept = deptFilter === 'all' || emp.department?.includes(deptFilter);
-        return matchesSearch && matchesDept;
-    })
-    .sort((a, b) => {
-        const deptA = a.department?.[0] || 'other';
-        const deptB = b.department?.[0] || 'other';
-        const indexA = DEPT_SORT_ORDER.indexOf(deptA);
-        const indexB = DEPT_SORT_ORDER.indexOf(deptB);
-        const safeIndexA = indexA === -1 ? 999 : indexA;
-        const safeIndexB = indexB === -1 ? 999 : indexB;
+  // Мемоизация вычисляемых значений
+  const sidebarWidth = useMemo(() => isSidebarCollapsed ? 'w-20' : 'w-72', [isSidebarCollapsed]);
+  const sidebarMobileClasses = useMemo(() => isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full', [isMobileMenuOpen]);
+  
+  // Мемоизация списка департаментов для сайдбара
+  const departmentList = useMemo(() => 
+    Object.values(ORGANIZATION_STRUCTURE).filter(d => d.id !== 'owner'),
+    []
+  );
 
-        if (safeIndexA !== safeIndexB) return safeIndexA - safeIndexB;
-        return a.full_name.localeCompare(b.full_name);
-    });
+  // Оптимизированные обработчики с useCallback
+  const handleSaveEmployeeWrapper = useCallback(async (emp: Employee) => {
+    await handleSaveEmployee(emp, isAdmin, isOffline);
+    setIsModalOpen(false);
+    setEditingEmployee(null);
+  }, [handleSaveEmployee, isAdmin, isOffline]);
 
-  const sanitizePayload = (emp: Employee) => {
-      const { attachments, ...data } = emp;
-      const payload: any = { ...data };
-      const dateFields = ['birth_date', 'join_date', 'passport_date', 'foreign_passport_date'];
-      dateFields.forEach(field => {
-          if (payload[field] === '') {
-              payload[field] = null;
-          }
-      });
-      return { payload, attachments };
-  };
-
-  const handleSaveEmployee = async (emp: Employee) => {
+  const handleDeleteEmployeeRequest = useCallback((id: string) => {
     if (!isAdmin) return;
-
-    if (isOffline) {
-        setEmployees(prev => {
-            const exists = prev.find(e => e.id === emp.id);
-            if (exists) return prev.map(e => e.id === emp.id ? emp : e);
-            return [emp, ...prev];
-        });
-        setIsModalOpen(false); setEditingEmployee(null);
-        return;
-    }
-    if (!supabase) return;
+    const empName = employees.find(e => e.id === id)?.full_name || 'этого сотрудника';
     
-    const { payload, attachments } = sanitizePayload(emp);
-    
-    try {
-        const { error: empError } = await supabase.from('employees').upsert(payload);
-        
-        if (empError) {
-            console.error("Supabase Save Error:", empError);
-            return;
-        }
-        
-        if (attachments && attachments.length > 0) {
-            try {
-                const { data: existingDocs } = await supabase.from('employee_attachments').select('id').eq('employee_id', emp.id);
-                const existingIds = existingDocs?.map(d => d.id) || [];
-                const newIds = attachments.map(a => a.id);
-                const idsToDelete = existingIds.filter(id => !newIds.includes(id));
-                
-                if (idsToDelete.length > 0) await supabase.from('employee_attachments').delete().in('id', idsToDelete);
-                
-                const attachmentsToUpsert = attachments
-                    .filter(a => a.file_name && a.public_url)
-                    .map(a => ({ 
-                        id: a.id,
-                        employee_id: emp.id,
-                        file_name: a.file_name,
-                        file_type: a.file_type,
-                        file_size: a.file_size,
-                        storage_path: a.storage_path,
-                        public_url: a.public_url,
-                        uploaded_at: a.uploaded_at
-                    }));
-                
-                if (attachmentsToUpsert.length > 0) await supabase.from('employee_attachments').upsert(attachmentsToUpsert);
-            } catch (attErr) {
-                console.warn("Attachment saving failed (table missing?), skipping.", attErr);
-            }
-        }
-        await fetchEmployees();
-        setIsModalOpen(false); setEditingEmployee(null);
-    } catch (error: any) {
-        console.error('Critical Error:', error.message);
-    }
-  };
-
-  const handleDeleteEmployeeRequest = (id: string) => {
-      if (!isAdmin) return;
-      const empName = employees.find(e => e.id === id)?.full_name || 'этого сотрудника';
-      
-      setConfirmModal({
-          isOpen: true,
-          title: 'Удаление сотрудника',
-          message: `Вы собираетесь удалить ${empName}.\nЭто действие удалит карточку, все файлы и личные статистики.\nВосстановить данные будет невозможно.`,
-          onConfirm: () => executeDeleteEmployee(id)
-      });
-  };
-
-  const executeDeleteEmployee = async (id: string) => {
-    setConfirmModal(prev => ({ ...prev, isOpen: false })); 
-    
-    if (isOffline) { 
-        setEmployees(prev => prev.filter(e => e.id !== id)); 
-        return; 
-    }
-    
-    if (!supabase) return;
-
-    try {
-        setIsLoading(true);
-        await supabase.from('employee_attachments').delete().eq('employee_id', id);
-        const { data: stats } = await supabase.from('statistics_definitions').select('id').eq('owner_id', id);
-        if (stats && stats.length > 0) {
-            const statIds = stats.map(s => s.id);
-            await supabase.from('statistics_values').delete().in('definition_id', statIds);
-            await supabase.from('statistics_definitions').delete().in('id', statIds);
-        }
-        const { error } = await supabase.from('employees').delete().eq('id', id);
-        if (error) throw error;
-        setEmployees(prev => prev.filter(e => e.id !== id));
-    } catch (error: any) { 
-        console.error("Delete failed", error);
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-  const handleEditClick = (emp: Employee) => { 
-      setEditingEmployee(emp); 
-      setIsModalOpen(true); 
-  };
-  
-  const handleAddClick = () => { 
-      if (!isAdmin) return;
-      setEditingEmployee(null); 
-      setIsModalOpen(true); 
-  };
-  
-  const handleImportData = async (data: Employee[]) => {
-      if (!isAdmin) return;
-      if (isOffline) {
-          setEmployees(data);
-          return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Удаление сотрудника',
+      message: `Вы собираетесь удалить ${empName}.\nЭто действие удалит карточку, все файлы и личные статистики.\nВосстановить данные будет невозможно.`,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        await handleDeleteEmployee(id, isAdmin, isOffline);
       }
-      setIsLoading(true);
-      for(const emp of data) {
-          await handleSaveEmployee(emp);
-      }
-      setIsLoading(false);
-  };
+    });
+  }, [isAdmin, employees, handleDeleteEmployee, isOffline]);
+
+  const handleUpdateOrgStructureWrapper = useCallback(async (newStruct: Record<string, Department>) => {
+    await handleUpdateOrgStructure(newStruct, isAdmin, isOffline);
+  }, [handleUpdateOrgStructure, isAdmin, isOffline]);
+
+  const handleImportDataWrapper = useCallback(async (data: Employee[]) => {
+    await handleImportData(data, isAdmin, isOffline);
+  }, [handleImportData, isAdmin, isOffline]);
+
+  const handleBypassAuthWrapper = useCallback(() => {
+    handleBypassAuth();
+    setEmployees(DEMO_EMPLOYEES);
+  }, [handleBypassAuth, setEmployees]);
+
+  const handleEditClick = useCallback((emp: Employee) => { 
+    setEditingEmployee(emp); 
+    setIsModalOpen(true); 
+  }, []);
+  
+  const handleAddClick = useCallback(() => { 
+    if (!isAdmin) return;
+    setEditingEmployee(null); 
+    setIsModalOpen(true); 
+  }, [isAdmin]);
+
+  const handleCloseModal = useCallback(() => {
+    setIsModalOpen(false);
+  }, []);
+
+  const handleCloseConfirmModal = useCallback(() => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  }, []);
+
+  // Обработчики навигации
+  const handleViewChange = useCallback((view: ViewMode) => {
+    setCurrentView(view);
+    setIsMobileMenuOpen(false);
+  }, []);
+
+  const handleStatisticsView = useCallback((deptId: string | null = null) => {
+    setSelectedDept(deptId);
+    setCurrentView('statistics');
+    setIsMobileMenuOpen(false);
+  }, []);
+
+  const handleToggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed(prev => !prev);
+  }, []);
+
+  const handleToggleMobileMenu = useCallback(() => {
+    setIsMobileMenuOpen(prev => !prev);
+  }, []);
+
+  const handleCloseMobileMenu = useCallback(() => {
+    setIsMobileMenuOpen(false);
+  }, []);
 
   if (authChecking) return <div className="min-h-screen bg-slate-50 flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" size={40} /></div>;
-  if (!session) return <Auth onBypass={handleBypassAuth} />;
-
-  const sidebarWidth = isSidebarCollapsed ? 'w-20' : 'w-72';
-  const sidebarMobileClasses = isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full';
+  if (!session) return <Auth onBypass={handleBypassAuthWrapper} />;
 
   return (
     <div className="min-h-screen flex bg-slate-50 overflow-hidden relative">
       {isMobileMenuOpen && (
-          <div className="fixed inset-0 bg-slate-900/50 z-30 md:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)}></div>
+          <div className="fixed inset-0 bg-slate-900/50 z-30 md:hidden backdrop-blur-sm transition-opacity" onClick={handleCloseMobileMenu}></div>
       )}
 
       <ConfirmationModal 
@@ -383,7 +209,7 @@ function App() {
         title={confirmModal.title}
         message={confirmModal.message}
         onConfirm={confirmModal.onConfirm}
-        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onCancel={handleCloseConfirmModal}
         isDanger={true}
         confirmLabel="Удалить"
       />
@@ -401,8 +227,8 @@ function App() {
                   </span>
              </div>
           </div>
-          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
-          <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="hidden md:block p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors absolute right-[-12px] top-6 bg-white border border-slate-200 shadow-sm z-30">
+          <button onClick={handleCloseMobileMenu} className="md:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
+          <button onClick={handleToggleSidebar} className="hidden md:block p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors absolute right-[-12px] top-6 bg-white border border-slate-200 shadow-sm z-30">
              {isSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
           </button>
         </div>
@@ -410,12 +236,12 @@ function App() {
         <nav className="p-3 space-y-1 flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
           <div className="mb-6">
             {!isSidebarCollapsed && <p className="px-4 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 animate-in fade-in">Основное</p>}
-            <button onClick={() => { setCurrentView('org_chart'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all font-medium group relative ${currentView === 'org_chart' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+            <button onClick={() => handleViewChange('org_chart')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all font-medium group relative ${currentView === 'org_chart' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
               <div className="flex-shrink-0"><Network size={20} /></div>
               {!isSidebarCollapsed && <span className="whitespace-nowrap">Оргсхема</span>}
             </button>
             {isAdmin && (
-                <button onClick={() => { setCurrentView('employees'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all font-medium group relative ${currentView === 'employees' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                <button onClick={() => handleViewChange('employees')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all font-medium group relative ${currentView === 'employees' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
                 <div className="flex-shrink-0"><LayoutGrid size={20} /></div>
                 {!isSidebarCollapsed && <span className="whitespace-nowrap">Сотрудники</span>}
                 </button>
@@ -424,13 +250,13 @@ function App() {
 
           <div>
              {!isSidebarCollapsed && <p className="px-4 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 animate-in fade-in">Статистики</p>}
-            <button onClick={() => { setSelectedDept(null); setCurrentView('statistics'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all mb-1 ${currentView === 'statistics' && !selectedDept ? 'bg-slate-800 text-white font-semibold shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
+            <button onClick={() => handleStatisticsView(null)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all mb-1 ${currentView === 'statistics' && !selectedDept ? 'bg-slate-800 text-white font-semibold shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
               <div className="flex-shrink-0"><TrendingUp size={20} /></div>
               {!isSidebarCollapsed && <span className="whitespace-nowrap">Дашборд</span>}
             </button>
             <div className="mt-2 space-y-1">
-                {Object.values(ORGANIZATION_STRUCTURE).filter(d => d.id !== 'owner').map(dept => (
-                  <button key={dept.id} onClick={() => { setSelectedDept(dept.id); setCurrentView('statistics'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all group ${currentView === 'statistics' && selectedDept === dept.id ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}>
+                {departmentList.map(dept => (
+                  <button key={dept.id} onClick={() => handleStatisticsView(dept.id)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all group ${currentView === 'statistics' && selectedDept === dept.id ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-500 hover:bg-slate-50'}`}>
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-white shadow-sm" style={{ backgroundColor: dept.color }} />
                     {!isSidebarCollapsed && <span className="truncate">{dept.name}</span>}
                   </button>
@@ -441,7 +267,7 @@ function App() {
           {isAdmin && (
               <div className="mt-6 border-t border-slate-100 pt-4">
                   {!isSidebarCollapsed && <p className="px-4 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 animate-in fade-in">Конфигурация</p>}
-                  <button onClick={() => { setCurrentView('settings'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all font-medium group relative ${currentView === 'settings' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
+                  <button onClick={() => handleViewChange('settings')} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all font-medium group relative ${currentView === 'settings' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
                       <div className="flex-shrink-0"><SettingsIcon size={20} /></div>
                       {!isSidebarCollapsed && <span className="whitespace-nowrap">Настройки</span>}
                   </button>
@@ -456,7 +282,7 @@ function App() {
                 <p className="text-2xl font-bold text-slate-800">{isLoading ? '...' : employees.length}</p>
               </div>
             )}
-          <button onClick={handleLogout} className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 font-medium transition-colors text-sm ${isSidebarCollapsed ? 'px-0' : ''}`} title="Выход">
+          <button onClick={() => handleLogout()} className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 font-medium transition-colors text-sm ${isSidebarCollapsed ? 'px-0' : ''}`} title="Выход">
              <LogOut size={18} />
              {!isSidebarCollapsed && <span>Выход</span>}
           </button>
@@ -466,7 +292,7 @@ function App() {
       <main className="flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out h-full overflow-hidden">
         <header className="bg-white/80 backdrop-blur-md fixed md:sticky top-0 left-0 right-0 z-20 border-b border-gray-200 px-4 md:px-8 py-4 flex justify-between items-center print:hidden h-[73px] w-full transition-all duration-300">
           <div className="flex items-center gap-4 flex-1">
-            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100"><Menu size={24} /></button>
+            <button onClick={handleToggleMobileMenu} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100"><Menu size={24} /></button>
             {currentView !== 'settings' && (
                 <div className="relative w-full max-w-xs md:max-w-md animate-in fade-in slide-in-from-left-2">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -479,7 +305,7 @@ function App() {
                       <Plus size={14}/> <span>Сотрудник</span>
                    </button>
                    <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                   <button onClick={() => { setCurrentView('statistics'); setSelectedDept(null); }} className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-white rounded-lg transition-all flex items-center gap-1.5" title="Перейти к управлению статистиками">
+                   <button onClick={() => handleStatisticsView(null)} className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-white rounded-lg transition-all flex items-center gap-1.5" title="Перейти к управлению статистиками">
                       <TrendingUp size={14}/> <span>Дашборд</span>
                    </button>
                 </div>
@@ -503,8 +329,8 @@ function App() {
              <div className="flex flex-col items-center justify-center h-full text-slate-400"><Loader2 className="animate-spin mb-2" size={32} /><p>Загрузка данных...</p></div>
           ) : (
             <>
-              {currentView === 'org_chart' && <OrgChart employees={employees} onSelectEmployee={handleEditClick} orgStructure={orgStructure} onUpdateOrg={handleUpdateOrgStructure} isAdmin={isAdmin} />}
-              {currentView === 'settings' && isAdmin && <Settings employees={employees} onImport={handleImportData} />}
+              {currentView === 'org_chart' && <OrgChart employees={employees} onSelectEmployee={handleEditClick} orgStructure={orgStructure} onUpdateOrg={handleUpdateOrgStructureWrapper} isAdmin={isAdmin} />}
+              {currentView === 'settings' && isAdmin && <Settings employees={employees} onImport={handleImportDataWrapper} />}
               {currentView === 'statistics' && <StatisticsTab employees={employees} isOffline={isOffline} selectedDeptId={selectedDept} isAdmin={isAdmin} />}
 
               {currentView === 'employees' && isAdmin && (
@@ -568,8 +394,8 @@ function App() {
       <EmployeeModal 
         isOpen={isModalOpen}
         isReadOnly={!isAdmin}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveEmployee}
+        onClose={handleCloseModal}
+        onSave={handleSaveEmployeeWrapper}
         initialData={editingEmployee}
       />
     </div>
