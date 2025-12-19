@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react'; // Добавьте useCallback
 import { StatisticDefinition, StatisticValue } from '../types';
 import { supabase } from '../supabaseClient';
 import { ORGANIZATION_STRUCTURE } from '../constants';
