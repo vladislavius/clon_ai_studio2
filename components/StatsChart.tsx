@@ -1,5 +1,4 @@
-
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react'; // Добавлен useCallback
 import { StatisticValue } from '../types';
 import { format, subDays, addDays } from 'date-fns';
 
