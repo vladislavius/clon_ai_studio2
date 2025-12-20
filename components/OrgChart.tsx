@@ -2,6 +2,7 @@ import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Employee, Department, SubDepartment } from '../types';
 import { User, X, Search, FileText, ChevronRight, Users, Crown, Target, Award, Copy, Check, MessageCircle, Phone, Hash, AlertTriangle, Zap, ChevronDown, ChevronUp, Edit2, Save, Trash2, Plus } from 'lucide-react';
+import { useToast } from './Toast';
 
 interface OrgChartProps {
   employees: Employee[];
@@ -14,6 +15,7 @@ interface OrgChartProps {
 const HORIZONTAL_DEPT_ORDER = ['dept7', 'dept1', 'dept2', 'dept3', 'dept4', 'dept5', 'dept6'];
 
 const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOrg, onSelectEmployee, isAdmin }) => {
+  const toast = useToast();
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
   const [selectedSubDeptId, setSelectedSubDeptId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -123,45 +125,61 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
       setIsEditing(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
       if (!editBuffer || !selectedDeptId) return;
-      const newStruct = { ...orgStructure };
       
-      if (selectedSubDeptId && newStruct[selectedDeptId].departments) {
-          // Обновляем поддепартамент
-          const subDept = {
-              id: selectedSubDeptId,
-              name: editBuffer.name || '',
-              code: editBuffer.code || '',
-              manager: editBuffer.manager || '',
-              description: editBuffer.description || '',
-              vfp: editBuffer.vfp || '',
-          } as SubDepartment;
+      try {
+          const newStruct = JSON.parse(JSON.stringify(orgStructure)); // Глубокое копирование
           
-          newStruct[selectedDeptId].departments![selectedSubDeptId] = subDept;
-      } else {
-          // Обновляем департамент
-          const dept = {
-              ...newStruct[selectedDeptId],
-              name: editBuffer.name || newStruct[selectedDeptId].name,
-              fullName: editBuffer.fullName || newStruct[selectedDeptId].fullName,
-              description: editBuffer.description || newStruct[selectedDeptId].description,
-              longDescription: editBuffer.longDescription || newStruct[selectedDeptId].longDescription,
-              vfp: editBuffer.vfp || newStruct[selectedDeptId].vfp,
-              goal: editBuffer.goal || newStruct[selectedDeptId].goal,
-              manager: editBuffer.manager || newStruct[selectedDeptId].manager,
-              mainStat: editBuffer.mainStat || newStruct[selectedDeptId].mainStat,
-              functions: editBuffer.functions || newStruct[selectedDeptId].functions || [],
-              troubleSigns: editBuffer.troubleSigns || newStruct[selectedDeptId].troubleSigns || [],
-              developmentActions: editBuffer.developmentActions || newStruct[selectedDeptId].developmentActions || [],
-          };
+          if (selectedSubDeptId && newStruct[selectedDeptId].departments) {
+              // Обновляем поддепартамент
+              const subDept = {
+                  id: selectedSubDeptId,
+                  name: editBuffer.name ?? '',
+                  code: editBuffer.code ?? '',
+                  manager: editBuffer.manager ?? '',
+                  description: editBuffer.description ?? '',
+                  vfp: editBuffer.vfp ?? '',
+              } as SubDepartment;
+              
+              newStruct[selectedDeptId].departments![selectedSubDeptId] = subDept;
+          } else {
+              // Обновляем департамент - используем значения из editBuffer, даже если они пустые
+              const dept = {
+                  ...newStruct[selectedDeptId],
+                  name: editBuffer.name !== undefined ? editBuffer.name : newStruct[selectedDeptId].name,
+                  fullName: editBuffer.fullName !== undefined ? editBuffer.fullName : newStruct[selectedDeptId].fullName,
+                  description: editBuffer.description !== undefined ? editBuffer.description : newStruct[selectedDeptId].description,
+                  longDescription: editBuffer.longDescription !== undefined ? editBuffer.longDescription : (editBuffer.description !== undefined ? editBuffer.description : newStruct[selectedDeptId].longDescription),
+                  vfp: editBuffer.vfp !== undefined ? editBuffer.vfp : newStruct[selectedDeptId].vfp,
+                  goal: editBuffer.goal !== undefined ? editBuffer.goal : newStruct[selectedDeptId].goal,
+                  manager: editBuffer.manager !== undefined ? editBuffer.manager : newStruct[selectedDeptId].manager,
+                  mainStat: editBuffer.mainStat !== undefined ? editBuffer.mainStat : newStruct[selectedDeptId].mainStat,
+                  functions: editBuffer.functions !== undefined ? editBuffer.functions : (newStruct[selectedDeptId].functions || []),
+                  troubleSigns: editBuffer.troubleSigns !== undefined ? editBuffer.troubleSigns : (newStruct[selectedDeptId].troubleSigns || []),
+                  developmentActions: editBuffer.developmentActions !== undefined ? editBuffer.developmentActions : (newStruct[selectedDeptId].developmentActions || []),
+              };
+              
+              newStruct[selectedDeptId] = dept;
+          }
           
-          newStruct[selectedDeptId] = dept;
+          console.log('Сохранение данных:', {
+              deptId: selectedDeptId,
+              mainStat: newStruct[selectedDeptId].mainStat,
+              functions: newStruct[selectedDeptId].functions,
+              troubleSigns: newStruct[selectedDeptId].troubleSigns,
+              developmentActions: newStruct[selectedDeptId].developmentActions,
+              vfp: newStruct[selectedDeptId].vfp,
+          });
+          
+          await onUpdateOrg(newStruct);
+          toast.success('Изменения сохранены успешно');
+          setIsEditing(false);
+          setEditBuffer(null);
+      } catch (error) {
+          console.error('Ошибка при сохранении:', error);
+          toast.error('Ошибка при сохранении изменений');
       }
-      
-      onUpdateOrg(newStruct);
-      setIsEditing(false);
-      setEditBuffer(null);
   };
 
   const handleUpdateCompanyMeta = () => {
@@ -194,6 +212,20 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
 
   const currentDept = selectedDeptId ? orgStructure[selectedDeptId] : null;
   const filteredList = getFilteredEmployees();
+  
+  // Отладочный лог для проверки данных
+  useEffect(() => {
+    if (currentDept && selectedDeptId && !selectedSubDeptId) {
+      console.log('Текущий департамент:', {
+        id: selectedDeptId,
+        mainStat: currentDept.mainStat,
+        functions: currentDept.functions,
+        troubleSigns: currentDept.troubleSigns,
+        developmentActions: currentDept.developmentActions,
+        vfp: currentDept.vfp,
+      });
+    }
+  }, [currentDept, selectedDeptId, selectedSubDeptId]);
   const ownerStruct = orgStructure['owner'];
   const directorName = orgStructure['dept7']?.departments?.['dept7_19']?.manager || "ИД";
 
@@ -232,6 +264,11 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                     <div className="flex flex-col md:flex-row justify-center gap-4 md:gap-4 pt-6 md:pt-6">
                         {HORIZONTAL_DEPT_ORDER.map(deptId => {
                             const dept = orgStructure[deptId];
+                            // Проверяем, что департамент существует
+                            if (!dept) {
+                                console.warn(`Департамент ${deptId} не найден в orgStructure`);
+                                return null;
+                            }
                             // Fix: Explicitly type subDepts to resolve 'unknown' type errors in the map function.
                             const subDepts: SubDepartment[] = dept.departments ? Object.values(dept.departments) : [];
                             const deptColor = dept.color;
@@ -344,7 +381,12 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                              <div className="mb-5">
                                  <h4 className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 flex items-center gap-1"><FileText size={10}/> Описание</h4>
                                  {isEditing ? (
-                                     <textarea value={editBuffer.description || ''} onChange={e => setEditBuffer({...editBuffer, description: e.target.value})} className="w-full text-sm p-3 bg-slate-50 rounded-xl border focus:ring-1 outline-none font-medium" rows={4} />
+                                     <textarea 
+                                         value={editBuffer.description ?? ''} 
+                                         onChange={e => setEditBuffer({...editBuffer, description: e.target.value, longDescription: e.target.value})} 
+                                         className="w-full text-sm p-3 bg-slate-50 rounded-xl border focus:ring-1 outline-none font-medium" 
+                                         rows={4} 
+                                     />
                                  ) : (
                                      <>
                                          <div className={`text-sm text-slate-700 leading-relaxed font-medium transition-all ${isDescExpanded ? '' : 'line-clamp-3'}`}>
@@ -360,7 +402,12 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                              {isEditing && !selectedSubDeptId && (
                                  <div className="mb-5">
                                      <h4 className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Главная Статистика</h4>
-                                     <input value={editBuffer.mainStat || ''} onChange={e => setEditBuffer({...editBuffer, mainStat: e.target.value})} className="w-full text-sm font-bold p-2 border rounded-lg" />
+                                     <input 
+                                         value={editBuffer.mainStat ?? ''} 
+                                         onChange={e => setEditBuffer({...editBuffer, mainStat: e.target.value})} 
+                                         className="w-full text-sm font-bold p-2 border rounded-lg" 
+                                         placeholder="Введите главную статистику"
+                                     />
                                  </div>
                              )}
 
@@ -391,17 +438,72 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                  </div>
                              )}
 
-                             {/* Trouble Signs & Actions - Similar editable logic */}
-                             {isEditing && !selectedSubDeptId && (
+                             {/* Trouble Signs & Actions - Editable and View modes */}
+                             {!selectedSubDeptId && (
                                  <div className="space-y-4 mb-5">
-                                     <div className="bg-red-50 p-4 rounded-xl border border-red-100">
-                                         <h4 className="text-[10px] uppercase font-black text-red-500 mb-2">Признаки проблем (по одному на строку)</h4>
-                                         <textarea value={(editBuffer.troubleSigns || []).join('\n')} onChange={e => setEditBuffer({...editBuffer, troubleSigns: e.target.value.split('\n')})} className="w-full text-xs p-2 bg-white border rounded" rows={3} />
-                                     </div>
-                                     <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-                                         <h4 className="text-[10px] uppercase font-black text-emerald-500 mb-2">Действия (по одному на строку)</h4>
-                                         <textarea value={(editBuffer.developmentActions || []).join('\n')} onChange={e => setEditBuffer({...editBuffer, developmentActions: e.target.value.split('\n')})} className="w-full text-xs p-2 bg-white border rounded" rows={3} />
-                                     </div>
+                                     {/* Признаки проблем */}
+                                     {(isEditing || (currentDept.troubleSigns && currentDept.troubleSigns.length > 0)) && (
+                                    <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                                        <h4 className="text-[10px] uppercase font-black text-red-500 mb-2">Признаки проблем:</h4>
+                                             {isEditing ? (
+                                                 <textarea 
+                                                     value={(editBuffer.troubleSigns || []).join('\n')} 
+                                                     onChange={e => {
+                                                         const lines = e.target.value.split('\n').filter(line => line.trim() !== '');
+                                                         setEditBuffer({...editBuffer, troubleSigns: lines});
+                                                     }} 
+                                                     className="w-full text-xs p-2 bg-white border rounded" 
+                                                     rows={5}
+                                                     placeholder="Введите признаки проблем, каждое с новой строки"
+                                                 />
+                                             ) : (
+                                                 <ul className="space-y-1.5">
+                                                     {currentDept.troubleSigns && currentDept.troubleSigns.length > 0 ? (
+                                                         currentDept.troubleSigns.map((sign: string, idx: number) => (
+                                                             <li key={idx} className="text-xs text-red-700 font-medium flex items-start gap-2 bg-white p-2 rounded border border-red-200">
+                                                                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 flex-shrink-0"></div>
+                                                                 <span>{sign}</span>
+                                                             </li>
+                                                         ))
+                                                     ) : (
+                                                         <li className="text-xs text-red-400 italic">Признаки проблем не указаны</li>
+                                                     )}
+                                                 </ul>
+                                             )}
+                                         </div>
+                                     )}
+                                     
+                                     {/* Действия */}
+                                    {(isEditing || (currentDept.developmentActions && currentDept.developmentActions.length > 0)) && (
+                                        <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                                            <h4 className="text-[10px] uppercase font-black text-emerald-500 mb-2">Первоочередные действия:</h4>
+                                             {isEditing ? (
+                                                 <textarea 
+                                                     value={(editBuffer.developmentActions || []).join('\n')} 
+                                                     onChange={e => {
+                                                         const lines = e.target.value.split('\n').filter(line => line.trim() !== '');
+                                                         setEditBuffer({...editBuffer, developmentActions: lines});
+                                                     }} 
+                                                     className="w-full text-xs p-2 bg-white border rounded" 
+                                                     rows={5}
+                                                     placeholder="Введите действия, каждое с новой строки"
+                                                 />
+                                             ) : (
+                                                 <ul className="space-y-1.5">
+                                                     {currentDept.developmentActions && currentDept.developmentActions.length > 0 ? (
+                                                         currentDept.developmentActions.map((action: string, idx: number) => (
+                                                             <li key={idx} className="text-xs text-emerald-700 font-medium flex items-start gap-2 bg-white p-2 rounded border border-emerald-200">
+                                                                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0"></div>
+                                                                 <span>{action}</span>
+                                                             </li>
+                                                         ))
+                                                     ) : (
+                                                         <li className="text-xs text-emerald-400 italic">Действия не указаны</li>
+                                                     )}
+                                                 </ul>
+                                             )}
+                                         </div>
+                                     )}
                                  </div>
                              )}
 
@@ -409,12 +511,20 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                              <div className="mb-6">
                                  <h4 className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 flex items-center gap-1"><Award size={10}/> Ценный Конечный Продукт (ЦКП)</h4>
                                  {isEditing ? (
-                                     <textarea value={editBuffer.vfp || ''} onChange={e => setEditBuffer({...editBuffer, vfp: e.target.value})} className="w-full text-sm font-bold p-3 border rounded-xl italic" rows={2} />
+                                     <textarea 
+                                         value={editBuffer.vfp ?? ''} 
+                                         onChange={e => setEditBuffer({...editBuffer, vfp: e.target.value})} 
+                                         className="w-full text-sm font-bold p-3 border rounded-xl italic" 
+                                         rows={3}
+                                         placeholder="Введите ценный конечный продукт"
+                                     />
                                  ) : (
-                                     (selectedSubDeptId ? currentDept.departments![selectedSubDeptId].vfp : currentDept.vfp) && (
+                                     (selectedSubDeptId ? currentDept.departments![selectedSubDeptId].vfp : currentDept.vfp) ? (
                                          <div className="bg-gradient-to-r from-slate-50 to-white border-l-4 border-slate-300 p-4 rounded-r-xl shadow-sm">
                                              <p className="text-sm font-bold text-slate-800 italic leading-relaxed">"{selectedSubDeptId ? currentDept.departments![selectedSubDeptId].vfp : currentDept.vfp}"</p>
                                          </div>
+                                     ) : (
+                                         <div className="text-xs text-slate-400 italic">ЦКП не указан</div>
                                      )
                                  )}
                              </div>
@@ -424,7 +534,12 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                  <div className="flex-1">
                                      <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Ответственный руководитель</div>
                                      {isEditing ? (
-                                         <input value={editBuffer.manager || ''} onChange={e => setEditBuffer({...editBuffer, manager: e.target.value})} className="w-full text-sm font-bold border-b border-slate-300 bg-transparent outline-none" />
+                                         <input 
+                                             value={editBuffer.manager ?? ''} 
+                                             onChange={e => setEditBuffer({...editBuffer, manager: e.target.value})} 
+                                             className="w-full text-sm font-bold border-b border-slate-300 bg-transparent outline-none" 
+                                             placeholder="Введите имя руководителя"
+                                         />
                                      ) : (
                                          <div className="text-sm font-bold text-slate-800">{selectedSubDeptId ? currentDept.departments![selectedSubDeptId].manager : currentDept.manager}</div>
                                      )}

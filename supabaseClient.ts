@@ -19,5 +19,17 @@ export const supabase = isConfigured
   : null;
 
 if (!isConfigured) {
-  console.warn('Supabase не настроен. Приложение будет работать в Offline режиме или с ошибками подключения.');
+  console.warn('⚠️ Supabase не настроен. Приложение будет работать в Offline режиме или с ошибками подключения.');
+  console.warn('📝 Проверьте:');
+  console.warn('   1. Файл .env.local существует в корне проекта');
+  console.warn('   2. Файл содержит VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY');
+  console.warn('   3. Dev сервер был перезапущен после создания .env.local');
+  console.warn('   4. URL начинается с http:// или https://');
+  console.warn('   5. ANON_KEY длиннее 20 символов');
+  console.warn('Текущие значения:', {
+    hasUrl: !!SUPABASE_URL,
+    urlLength: SUPABASE_URL.length,
+    hasKey: !!SUPABASE_ANON_KEY,
+    keyLength: SUPABASE_ANON_KEY.length,
+  });
 }
