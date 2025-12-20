@@ -4,6 +4,7 @@ import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Edit2, Trash2, User, Phone, Mail, MessageCircle, FileText, Printer, Hash } from 'lucide-react';
 import { format } from 'date-fns';
 import { exportEmployeeToPDF } from '../utils/exportUtils';
+import { sanitizeText, sanitizeURL } from '../utils/sanitize';
 
 // Условный импорт react-window (опционально)
 let FixedSizeGrid: any = null;
@@ -157,22 +158,63 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
   const quickPrint = (e: React.MouseEvent, emp: EmployeeType) => {
     e.stopPropagation();
      
-     // Generate Emergency Contacts HTML
+     // Санитизируем все пользовательские данные для защиты от XSS
+     const safeName = sanitizeText(emp.full_name);
+     const safePosition = sanitizeText(emp.position || 'Должность не указана');
+     const safePhotoUrl = sanitizeURL(emp.photo_url || '');
+     const safeId = sanitizeText(emp.id);
+     const safeNickname = sanitizeText(emp.nickname || '');
+     const safeJoinDate = sanitizeText(emp.join_date || '-');
+     const safePhone = sanitizeText(emp.phone || '');
+     const safeEmail = sanitizeText(emp.email || '');
+     const safeTelegram = sanitizeText(emp.telegram || '');
+     const safeWhatsapp = sanitizeText(emp.whatsapp || '');
+     const safeActualAddress = sanitizeText(emp.actual_address || '-');
+     const safeRegistrationAddress = sanitizeText(emp.registration_address || '-');
+     const safeBirthDate = sanitizeText(emp.birth_date || '-');
+     const safeInn = sanitizeText(emp.inn || '-');
+     const safePassportNumber = sanitizeText(emp.passport_number || '-');
+     const safePassportDate = sanitizeText(emp.passport_date || '-');
+     const safePassportIssuer = sanitizeText(emp.passport_issuer || '-');
+     const safeForeignPassport = sanitizeText(emp.foreign_passport || '');
+     const safeForeignPassportDate = sanitizeText(emp.foreign_passport_date || '-');
+     const safeForeignPassportIssuer = sanitizeText(emp.foreign_passport_issuer || '-');
+     const safeBankName = sanitizeText(emp.bank_name || 'Не указан');
+     const safeBankDetails = sanitizeText(emp.bank_details || '-');
+     const safeCryptoWallet = sanitizeText(emp.crypto_wallet || '-');
+     const safeCryptoNetwork = sanitizeText(emp.crypto_network || 'NET');
+     const safeAdditionalInfo = sanitizeText(emp.additional_info || '');
+     
+     // Generate Emergency Contacts HTML с санитизацией
      const emergencyHtml = emp.emergency_contacts && emp.emergency_contacts.length > 0
         ? emp.emergency_contacts.map(c => `
             <div class="emergency-card">
-                <div class="ec-name">${c.name}</div>
-                <div class="ec-role">${c.relation || 'Родственник'}</div>
-                <div class="ec-phone">${c.phone}</div>
+                <div class="ec-name">${sanitizeText(c.name)}</div>
+                <div class="ec-role">${sanitizeText(c.relation || 'Родственник')}</div>
+                <div class="ec-phone">${sanitizeText(c.phone)}</div>
             </div>
           `).join('')
         : '<div style="font-size:11px; color:#94a3b8; font-style: italic;">Контакты не указаны</div>';
+
+     // Санитизируем названия департаментов
+     const safeDeptNames = emp.department?.map(d => {
+       const dept = ORGANIZATION_STRUCTURE[d];
+       return dept ? sanitizeText(dept.name.split('.')[1] || '') : '';
+     }).filter(Boolean).join(', ') || '-';
+     
+     const safeSubDeptNames = emp.subdepartment?.map(s => {
+       const deptId = emp.department?.[0];
+       if (!deptId) return sanitizeText(s);
+       const dept = ORGANIZATION_STRUCTURE[deptId];
+       const subDept = dept?.departments?.[s];
+       return subDept ? sanitizeText(subDept.name) : sanitizeText(s);
+     }).filter(Boolean).join(', ') || '-';
 
      const printContent = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>${emp.full_name}</title>
+          <title>${safeName}</title>
           <meta charset="utf-8">
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
           <style>
@@ -234,14 +276,14 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
         <body>
           <div class="page">
              <div class="header">
-                 <img src="${emp.photo_url || ''}" class="photo" onerror="this.src='https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b'" />
+                 <img src="${safePhotoUrl}" class="photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(safeName)}&background=f1f5f9&color=64748b'" />
                  <div class="header-info">
-                     <h1>${emp.full_name}</h1>
-                     <h2>${emp.position || 'Должность не указана'}</h2>
+                     <h1>${safeName}</h1>
+                     <h2>${safePosition}</h2>
                      <div class="badges">
-                        <span class="badge">ID: ${emp.id.substring(0,8)}</span>
-                        ${emp.nickname ? `<span class="badge">NIK: ${emp.nickname}</span>` : ''}
-                        <span class="badge">Принят: ${emp.join_date || '-'}</span>
+                        <span class="badge">ID: ${safeId.substring(0,8)}</span>
+                        ${safeNickname ? `<span class="badge">NIK: ${safeNickname}</span>` : ''}
+                        <span class="badge">Принят: ${safeJoinDate}</span>
                      </div>
                  </div>
              </div>
@@ -249,20 +291,20 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                 <div class="sidebar">
                     <div class="section">
                         <div class="section-title">CONTACTS</div>
-                        ${emp.phone ? `<div class="contact-item"><div class="contact-icon">Ph</div>${emp.phone}</div>` : ''}
-                        ${emp.email ? `<div class="contact-item"><div class="contact-icon">@</div>${emp.email}</div>` : ''}
-                        ${emp.telegram ? `<div class="contact-item"><div class="contact-icon">Tg</div>${emp.telegram}</div>` : ''}
-                        ${emp.whatsapp ? `<div class="contact-item"><div class="contact-icon">Wa</div>${emp.whatsapp}</div>` : ''}
+                        ${safePhone ? `<div class="contact-item"><div class="contact-icon">Ph</div>${safePhone}</div>` : ''}
+                        ${safeEmail ? `<div class="contact-item"><div class="contact-icon">@</div>${safeEmail}</div>` : ''}
+                        ${safeTelegram ? `<div class="contact-item"><div class="contact-icon">Tg</div>${safeTelegram}</div>` : ''}
+                        ${safeWhatsapp ? `<div class="contact-item"><div class="contact-icon">Wa</div>${safeWhatsapp}</div>` : ''}
                     </div>
                     <div class="section">
                         <div class="section-title">RESIDENCE</div>
                         <div class="address-box">
                             <div class="address-label">ACTUAL</div>
-                            <div class="address-val">${emp.actual_address || '-'}</div>
+                            <div class="address-val">${safeActualAddress}</div>
                         </div>
                         <div class="address-box">
                             <div class="address-label">REGISTRATION</div>
-                            <div class="address-val">${emp.registration_address || '-'}</div>
+                            <div class="address-val">${safeRegistrationAddress}</div>
                         </div>
                     </div>
                     <div class="section">
@@ -274,31 +316,31 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                     <div class="section">
                         <div class="section-title">ORGANIZATION & IDENTITY</div>
                         <div class="grid-2">
-                            <div><span class="label">DEPARTMENT</span><div class="value">${emp.department?.map(d => ORGANIZATION_STRUCTURE[d]?.name.split('.')[1] || '').join(', ') || '-'}</div></div>
-                            <div><span class="label">SUB-DEPARTMENT</span><div class="value">${emp.subdepartment?.map(s => { const deptId = emp.department?.[0]; return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s; }).join(', ') || '-'}</div></div>
-                            <div style="margin-top: 10px;"><span class="label">BIRTH DATE</span><div class="value">${emp.birth_date || '-'}</div></div>
-                             <div style="margin-top: 10px;"><span class="label">INN</span><div class="value"><span class="mono-bg">${emp.inn || '-'}</span></div></div>
+                            <div><span class="label">DEPARTMENT</span><div class="value">${safeDeptNames}</div></div>
+                            <div><span class="label">SUB-DEPARTMENT</span><div class="value">${safeSubDeptNames}</div></div>
+                            <div style="margin-top: 10px;"><span class="label">BIRTH DATE</span><div class="value">${safeBirthDate}</div></div>
+                             <div style="margin-top: 10px;"><span class="label">INN</span><div class="value"><span class="mono-bg">${safeInn}</span></div></div>
                         </div>
                     </div>
                     <div class="section">
                         <div class="section-title">PASSPORT DETAILS</div>
                         <div class="passport-box">
                              <div class="grid-2">
-                                <div><span class="label">SERIES & NUMBER</span><div class="value"><span class="mono-bg">${emp.passport_number || '-'}</span></div></div>
-                                <div><span class="label">DATE OF ISSUE</span><div class="value">${emp.passport_date || '-'}</div></div>
+                                <div><span class="label">SERIES & NUMBER</span><div class="value"><span class="mono-bg">${safePassportNumber}</span></div></div>
+                                <div><span class="label">DATE OF ISSUE</span><div class="value">${safePassportDate}</div></div>
                             </div>
-                            <div style="margin-top: 10px;"><span class="label">ISSUED BY</span><div class="value">${emp.passport_issuer || '-'}</div></div>
+                            <div style="margin-top: 10px;"><span class="label">ISSUED BY</span><div class="value">${safePassportIssuer}</div></div>
                         </div>
                     </div>
-                    ${emp.foreign_passport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${emp.foreign_passport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${emp.foreign_passport_date || '-'}</div></div></div><div style="margin-top: 10px;"><span class="label">AUTHORITY</span><div class="value">${emp.foreign_passport_issuer || '-'}</div></div></div></div>` : ''}
+                    ${safeForeignPassport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${safeForeignPassport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${safeForeignPassportDate}</div></div></div><div style="margin-top: 10px;"><span class="label">AUTHORITY</span><div class="value">${safeForeignPassportIssuer}</div></div></div></div>` : ''}
                     <div class="section">
                         <div class="section-title">FINANCE</div>
-                        <div class="finance-row"><span class="finance-label">Bank Name</span><span class="finance-val">${emp.bank_name || 'Не указан'}</span></div>
-                        <div class="finance-row"><span class="finance-label">Account / Card</span><span class="finance-val">${emp.bank_details || '-'}</span></div>
-                         <div class="finance-row"><span class="finance-label">Crypto Wallet (${emp.crypto_network || 'NET'})</span><span class="finance-val">${emp.crypto_wallet || '-'}</span></div>
+                        <div class="finance-row"><span class="finance-label">Bank Name</span><span class="finance-val">${safeBankName}</span></div>
+                        <div class="finance-row"><span class="finance-label">Account / Card</span><span class="finance-val">${safeBankDetails}</span></div>
+                         <div class="finance-row"><span class="finance-label">Crypto Wallet (${safeCryptoNetwork})</span><span class="finance-val">${safeCryptoWallet}</span></div>
                     </div>
                     
-                    ${emp.additional_info ? `<div class="section"><div class="section-title">NOTES</div><div style="font-size:11px; color:#334155; line-height:1.5; border-left:2px solid #e2e8f0; padding-left:10px;">${emp.additional_info}</div></div>` : ''}
+                    ${safeAdditionalInfo ? `<div class="section"><div class="section-title">NOTES</div><div style="font-size:11px; color:#334155; line-height:1.5; border-left:2px solid #e2e8f0; padding-left:10px;">${safeAdditionalInfo}</div></div>` : ''}
                 </div>
              </div>
              <div class="footer">CONFIDENTIAL PERSONNEL RECORD • HR SYSTEM PRO • ${format(new Date(), 'dd.MM.yyyy')}</div>

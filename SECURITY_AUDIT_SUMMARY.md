@@ -99,3 +99,6 @@ npm install dompurify @types/dompurify
 - **Настройка Vercel:** `VERCEL_ENV_SETUP.md`
 - **Настройка Supabase:** `SUPABASE_SETUP.md`
 
+
+
+

@@ -44,7 +44,7 @@ export function useAuth(): UseAuthReturn {
       setAuthChecking(false);
       return;
     }
-    
+
     if (!supabase) {
       setAuthChecking(false);
       return;
@@ -60,13 +60,36 @@ export function useAuth(): UseAuthReturn {
       setAuthChecking(false);
     }).catch((error: unknown) => {
       if (!isMounted) return;
-      console.error('Error getting session:', error);
+      
+      // Обработка ошибки refresh token
+      if (error && typeof error === 'object' && 'message' in error) {
+        const errorMessage = String(error.message);
+        if (errorMessage.includes('Refresh Token') || errorMessage.includes('Invalid')) {
+          // Очищаем устаревший токен
+          if (typeof window !== 'undefined' && localStorage) {
+            localStorage.removeItem('sb-supabase-auth-token');
+          }
+        }
+      }
+      
+      if (import.meta.env.DEV) {
+        console.error('Error getting session:', error);
+      }
       setAuthChecking(false);
     });
 
     // Listen for auth state changes
     const { data: { subscription: sub } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!isMounted) return; // Проверка перед обновлением состояния
+      
+      // Обработка ошибки refresh token
+      if (_event === 'TOKEN_REFRESHED' && !session) {
+        // Токен невалидный, очищаем localStorage
+        if (typeof window !== 'undefined' && localStorage) {
+          localStorage.removeItem('sb-supabase-auth-token');
+        }
+      }
+      
       setSession(session);
       if (!session) {
         setIsOffline(false);
@@ -87,15 +110,29 @@ export function useAuth(): UseAuthReturn {
   };
 
   const handleLogout = async () => {
-    if (isOffline) {
-      setIsOffline(false);
-      setSession(null);
-      return;
-    }
-    
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    // Immediate local cleanup to improve perceived performance
     setSession(null);
+    setIsOffline(false);
+
+    if (localStorage) {
+      localStorage.removeItem('sb-supabase-auth-token'); // Supabase default key
+    }
+
+    if (!supabase || isOffline) return;
+
+    try {
+      // Attempt server logout with short timeout
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Logout timed out')), 2000));
+      await Promise.race([
+        supabase.auth.signOut(),
+        timeoutPromise
+      ]);
+    } catch (e) {
+      console.warn('Logout error or timeout (force logout executed):', e);
+    } finally {
+      // Ensure reload to clear all in-memory states
+      window.location.reload();
+    }
   };
 
   return {

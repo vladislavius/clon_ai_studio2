@@ -3,8 +3,7 @@
  * Защита от XSS атак
  */
 
-// Импорт DOMPurify будет добавлен после установки пакета
-// import DOMPurify from 'dompurify';
+import DOMPurify from 'dompurify';
 
 /**
  * Санитизирует HTML контент, удаляя потенциально опасные теги и атрибуты
@@ -17,20 +16,31 @@ export function sanitizeHTML(dirty: string): string {
     return sanitizeText(dirty);
   }
 
-  try {
-    // Динамический импорт DOMPurify (будет работать после установки пакета)
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const DOMPurify = require('dompurify');
-    return DOMPurify.sanitize(dirty, {
-      ALLOWED_TAGS: [], // Запрещаем все HTML теги по умолчанию
-      ALLOWED_ATTR: [],
-      KEEP_CONTENT: true, // Сохраняем текстовое содержимое
-    });
-  } catch (error) {
-    console.warn('DOMPurify not available, using text sanitization:', error);
-    // Fallback на текстовую санитизацию
+  // Используем DOMPurify для удаления всех HTML тегов, сохраняя только текст
+  return DOMPurify.sanitize(dirty, {
+    ALLOWED_TAGS: [], // Запрещаем все HTML теги по умолчанию
+    ALLOWED_ATTR: [],
+    KEEP_CONTENT: true, // Сохраняем текстовое содержимое
+  });
+}
+
+/**
+ * Санитизирует HTML контент, разрешая безопасные теги для rich text
+ * Используйте ТОЛЬКО если действительно нужен HTML (например, для заметок)
+ * @param dirty - Небезопасный HTML контент
+ * @returns Санитизированный HTML с разрешенными тегами
+ */
+export function sanitizeRichHTML(dirty: string): string {
+  if (typeof window === 'undefined') {
     return sanitizeText(dirty);
   }
+
+  // Разрешаем только безопасные теги для форматирования
+  return DOMPurify.sanitize(dirty, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'p', 'br', 'ul', 'ol', 'li'],
+    ALLOWED_ATTR: [],
+    KEEP_CONTENT: true,
+  });
 }
 
 /**
@@ -101,7 +111,7 @@ export function sanitizeObject<T extends Record<string, unknown>>(
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
       sanitized[key] = sanitizeObject(value as Record<string, unknown>) as T[Extract<keyof T, string>];
     } else if (Array.isArray(value)) {
-      sanitized[key] = value.map(item => 
+      sanitized[key] = value.map(item =>
         typeof item === 'string' ? sanitizeText(item) : item
       ) as T[Extract<keyof T, string>];
     }
@@ -109,4 +119,7 @@ export function sanitizeObject<T extends Record<string, unknown>>(
 
   return sanitized;
 }
+
+
+
 

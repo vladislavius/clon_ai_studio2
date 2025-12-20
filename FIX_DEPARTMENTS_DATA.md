@@ -75,3 +75,6 @@ description: description, // Прямое значение, без fallback
 
 Теперь прямая колонка `description` из БД имеет приоритет над `content.description` из JSONB.
 
+
+
+

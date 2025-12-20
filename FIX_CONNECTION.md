@@ -61,3 +61,6 @@ VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIs
 3. Проверьте, что URL и ключ правильные (из Supabase Dashboard → Project Settings → API)
 4. Перезапустите сервер еще раз
 
+
+
+

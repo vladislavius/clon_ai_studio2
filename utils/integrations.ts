@@ -7,6 +7,7 @@ import { supabase } from '../supabaseClient';
 import { Employee } from '../types';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { logError, logSuccess, debugLog } from './logger';
 
 export type IntegrationType = 'telegram' | 'slack' | 'email' | 'other';
 
@@ -33,7 +34,7 @@ export async function saveIntegrationToken(
   webhookUrl?: string
 ): Promise<boolean> {
   if (!supabase) {
-    console.error('Supabase не настроен');
+    logError('Supabase не настроен');
     return false;
   }
 
@@ -41,30 +42,41 @@ export async function saveIntegrationToken(
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      console.error('Ошибка получения пользователя:', userError);
+      logError('Ошибка получения пользователя:', userError);
       return false;
     }
 
     // Сохраняем токен (в будущем можно добавить шифрование)
+    // Для Slack token может быть пустым, поэтому используем NULL вместо пустой строки
+    const tokenValue = token.trim() || null;
+    
     const { error } = await supabase
       .from('integration_tokens')
       .upsert({
         user_id: user.id,
         integration_type: type,
-        token_encrypted: token, // В будущем: зашифровать перед сохранением
-        webhook_url: webhookUrl || null,
+        token_encrypted: tokenValue, // В будущем: зашифровать перед сохранением
+        webhook_url: webhookUrl?.trim() || null,
       }, {
         onConflict: 'user_id,integration_type'
       });
 
     if (error) {
-      console.error('Ошибка сохранения токена:', error);
+      logError('Ошибка сохранения токена:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        type,
+        hasToken: !!tokenValue,
+        hasWebhook: !!webhookUrl
+      });
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error('Неожиданная ошибка при сохранении токена:', error);
+    logError('Неожиданная ошибка при сохранении токена:', error);
     return false;
   }
 }
@@ -78,7 +90,7 @@ export async function getIntegrationToken(
   type: IntegrationType
 ): Promise<string | null> {
   if (!supabase) {
-    console.error('Supabase не настроен');
+    logError('Supabase не настроен');
     return null;
   }
 
@@ -86,7 +98,7 @@ export async function getIntegrationToken(
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      console.error('Ошибка получения пользователя:', userError);
+      logError('Ошибка получения пользователя:', userError);
       return null;
     }
 
@@ -103,14 +115,14 @@ export async function getIntegrationToken(
         // Токен не найден
         return null;
       }
-      console.error('Ошибка получения токена:', error);
+      logError('Ошибка получения токена:', error);
       return null;
     }
 
     // В будущем: расшифровать токен перед возвратом
     return data.token_encrypted;
   } catch (error) {
-    console.error('Неожиданная ошибка при получении токена:', error);
+    logError('Неожиданная ошибка при получении токена:', error);
     return null;
   }
 }
@@ -124,7 +136,7 @@ export async function deleteIntegrationToken(
   type: IntegrationType
 ): Promise<boolean> {
   if (!supabase) {
-    console.error('Supabase не настроен');
+    logError('Supabase не настроен');
     return false;
   }
 
@@ -132,7 +144,7 @@ export async function deleteIntegrationToken(
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      console.error('Ошибка получения пользователя:', userError);
+      logError('Ошибка получения пользователя:', userError);
       return false;
     }
 
@@ -144,13 +156,13 @@ export async function deleteIntegrationToken(
       .eq('integration_type', type);
 
     if (error) {
-      console.error('Ошибка удаления токена:', error);
+      logError('Ошибка удаления токена:', error);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error('Неожиданная ошибка при удалении токена:', error);
+    logError('Неожиданная ошибка при удалении токена:', error);
     return false;
   }
 }
@@ -161,7 +173,7 @@ export async function deleteIntegrationToken(
  */
 export async function getAllIntegrationTokens(): Promise<IntegrationToken[]> {
   if (!supabase) {
-    console.error('Supabase не настроен');
+    logError('Supabase не настроен');
     return [];
   }
 
@@ -169,7 +181,7 @@ export async function getAllIntegrationTokens(): Promise<IntegrationToken[]> {
     // Получаем текущего пользователя
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      console.error('Ошибка получения пользователя:', userError);
+      logError('Ошибка получения пользователя:', userError);
       return [];
     }
 
@@ -181,13 +193,13 @@ export async function getAllIntegrationTokens(): Promise<IntegrationToken[]> {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Ошибка получения токенов:', error);
+      logError('Ошибка получения токенов:', error);
       return [];
     }
 
     return data || [];
   } catch (error) {
-    console.error('Неожиданная ошибка при получении токенов:', error);
+    logError('Неожиданная ошибка при получении токенов:', error);
     return [];
   }
 }
@@ -211,7 +223,7 @@ export async function migrateTokensFromLocalStorage(): Promise<void> {
       if (migrated) {
         localStorage.removeItem('telegram_bot_token');
         if (telegramChatId) localStorage.removeItem('telegram_chat_id');
-        console.log('✅ Токен Telegram мигрирован в БД');
+        logSuccess('Токен Telegram мигрирован в БД');
       }
     }
 
@@ -219,11 +231,11 @@ export async function migrateTokensFromLocalStorage(): Promise<void> {
       const migrated = await saveIntegrationToken('slack', '', slackWebhook);
       if (migrated) {
         localStorage.removeItem('slack_webhook');
-        console.log('✅ Webhook Slack мигрирован в БД');
+        logSuccess('Webhook Slack мигрирован в БД');
       }
     }
   } catch (error) {
-    console.error('Ошибка миграции токенов:', error);
+    logError('Ошибка миграции токенов:', error);
   }
 }
 
@@ -270,7 +282,7 @@ export function openCalendarEvent(
   }
 
   if (url) {
-    window.open(url, '_blank');
+  window.open(url, '_blank');
   }
 }
 

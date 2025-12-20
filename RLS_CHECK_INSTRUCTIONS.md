@@ -141,3 +141,6 @@ WHERE proname = 'is_admin';
 - `supabase_schema_complete.sql` - Основной скрипт схемы с политиками
 - `create_integration_tokens_table.sql` - Создание таблицы токенов (тоже использует RLS)
 
+
+
+

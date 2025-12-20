@@ -225,3 +225,6 @@ A: Просто сделайте `git push` - Vercel автоматически 
 **Q: Почему на Vercel ошибка подключения?**
 A: Проверьте, что вы добавили переменные окружения в Vercel Dashboard → Settings → Environment Variables.
 
+
+
+

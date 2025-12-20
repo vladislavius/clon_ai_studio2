@@ -122,3 +122,6 @@ npm install react-window @types/react-window
 - ✅ Проверка RLS политик
 - ✅ Защита от XSS (утилиты готовы, нужно применить)
 
+
+
+

@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useToast } from '../components/Toast';
 import { Employee, Attachment } from '../types';
 import { supabase } from '../supabaseClient';
+import { debugLog, debugWarn, logError } from '../utils/logger';
 
 interface UseEmployeesReturn {
   employees: Employee[];
@@ -20,50 +21,133 @@ interface UseEmployeesReturn {
 export function useEmployees(): UseEmployeesReturn {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const isMountedRef = useRef(true);
+  const isFetchingRef = useRef(false); // Защита от множественных вызовов
+  const toast = useToast();
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const fetchEmployees = useCallback(async () => {
+    debugLog('[useEmployees] fetchEmployees called, isMounted:', isMountedRef.current);
+    if (!isMountedRef.current) return;
+    
+    // Защита от множественных одновременных вызовов
+    if (isFetchingRef.current) {
+      debugLog('[useEmployees] Already fetching, skipping duplicate call');
+      return;
+    }
+    
+    isFetchingRef.current = true;
     setIsLoading(true);
+
     if (!supabase) {
-      setIsLoading(false);
+      debugLog('[useEmployees] supabase is null, skipping');
+      if (isMountedRef.current) setIsLoading(false);
       return;
     }
 
     try {
+      // Проверяем сессию перед запросом
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) {
+        debugLog('[useEmployees] No session, skipping fetch');
+        if (isMountedRef.current) {
+          setEmployees([]);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      debugLog('[useEmployees] Fetching employees from Supabase...', { 
+        userId: currentSession.user.id,
+        email: currentSession.user.email 
+      });
+      
+      // Оптимизированный запрос: загружаем только employees без JOIN
+      // JOIN с attachments может быть медленным, загружаем их отдельно только если нужно
+      const startTime = performance.now();
+      
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      if (employeesError) throw employeesError;
-      
-      let attachmentsData: Attachment[] = [];
-      try {
-        const { data: att, error: attError } = await supabase
-          .from('employee_attachments')
-          .select('*');
-        if (!attError && att) attachmentsData = att;
-      } catch (err) {
-        console.warn("Could not fetch attachments, continuing without them.", err);
+
+      const fetchTime = performance.now() - startTime;
+      debugLog('[useEmployees] Fetch time:', fetchTime.toFixed(2), 'ms');
+
+      debugLog('[useEmployees] Employees result:', { 
+        count: employeesData?.length, 
+        error: employeesError,
+        errorCode: employeesError?.code,
+        errorMessage: employeesError?.message
+      });
+
+      if (employeesError) {
+        // Детальное логирование ошибки для диагностики
+        logError('Error fetching employees:', {
+          code: employeesError.code,
+          message: employeesError.message,
+          details: employeesError.details,
+          hint: employeesError.hint
+        });
+        throw employeesError;
       }
 
-      if (employeesData) {
-        const mergedEmployees = employeesData.map((emp) => ({
+      // Загружаем attachments отдельно только если есть сотрудники
+      let attachmentsData: Attachment[] = [];
+      if (employeesData && employeesData.length > 0) {
+        try {
+          const { data: att, error: attError } = await supabase
+            .from('employee_attachments')
+            .select('*');
+          if (!attError && att) {
+            attachmentsData = att;
+          }
+        } catch (err) {
+          debugWarn("Could not fetch attachments, continuing without them.", err);
+        }
+      }
+
+      if (employeesData && isMountedRef.current) {
+        // Объединяем employees с attachments
+        const mergedEmployees = employeesData.map((emp: Employee) => ({
           ...emp,
           attachments: attachmentsData.filter((att) => att.employee_id === emp.id)
-        }));
-        setEmployees(mergedEmployees as Employee[]);
+        })) as Employee[];
+        
+        setEmployees(mergedEmployees);
+        const totalTime = performance.now() - startTime;
+        debugLog('[useEmployees] Successfully loaded', mergedEmployees.length, 'employees in', totalTime.toFixed(2), 'ms');
+      } else if (isMountedRef.current) {
+        debugLog('[useEmployees] No employees data or component unmounted');
+        setEmployees([]);
       }
     } catch (error: unknown) {
       if (error instanceof Error) {
-        console.error('Error fetching employees:', error);
-        console.error('Ошибка загрузки сотрудников: ' + error.message);
+        logError('Error fetching employees:', error);
+        if (isMountedRef.current) {
+          toast.error('Ошибка загрузки сотрудников: ' + error.message);
+        }
       } else {
-        console.error('Unknown error fetching employees:', error);
+        logError('Unknown error fetching employees:', error);
+      }
+      // Устанавливаем пустой массив при ошибке
+      if (isMountedRef.current) {
+        setEmployees([]);
       }
     } finally {
-      setIsLoading(false);
+      isFetchingRef.current = false;
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [toast]);
 
   const sanitizePayload = (emp: Employee) => {
     const { attachments, ...data } = emp;
@@ -94,35 +178,54 @@ export function useEmployees(): UseEmployeesReturn {
     }
 
     if (!supabase) return;
-    
+
     const { payload, attachments } = sanitizePayload(emp);
-    
+
     try {
+      // Optimistic locking: проверяем версию перед сохранением
+      if (emp.id && emp.version !== undefined) {
+        // Получаем текущую версию из БД
+        const { data: currentData } = await supabase
+          .from('employees')
+          .select('version')
+          .eq('id', emp.id)
+          .single();
+
+        // Проверяем конфликт версий
+        if (currentData && currentData.version !== emp.version) {
+          toast.error(
+            'Запись была изменена другим пользователем. Обновите страницу для получения актуальных данных.'
+          );
+          return;
+        }
+      }
+
       const { error: empError } = await supabase.from('employees').upsert(payload);
-      
+
       if (empError) {
-        console.error("Supabase Save Error:", empError);
+        logError("Supabase Save Error:", empError);
+        toast.error('Ошибка сохранения: ' + empError.message);
         return;
       }
-      
+
       if (attachments && attachments.length > 0) {
         try {
           const { data: existingDocs } = await supabase
             .from('employee_attachments')
             .select('id')
             .eq('employee_id', emp.id);
-          
+
           const existingIds = existingDocs?.map(d => d.id) || [];
           const newIds = attachments.map(a => a.id);
           const idsToDelete = existingIds.filter(id => !newIds.includes(id));
-          
+
           if (idsToDelete.length > 0) {
             await supabase.from('employee_attachments').delete().in('id', idsToDelete);
           }
-          
+
           const attachmentsToUpsert = attachments
             .filter(a => a.file_name && a.public_url)
-            .map(a => ({ 
+            .map(a => ({
               id: a.id,
               employee_id: emp.id,
               file_name: a.file_name,
@@ -132,23 +235,29 @@ export function useEmployees(): UseEmployeesReturn {
               public_url: a.public_url,
               uploaded_at: a.uploaded_at
             }));
-          
+
           if (attachmentsToUpsert.length > 0) {
             await supabase.from('employee_attachments').upsert(attachmentsToUpsert);
           }
         } catch (attErr) {
-          console.warn("Attachment saving failed (table missing?), skipping.", attErr);
+          debugWarn("Attachment saving failed (table missing?), skipping.", attErr);
         }
       }
-      await fetchEmployees();
+      if (isMountedRef.current) {
+        await fetchEmployees();
+        toast.success('Сотрудник успешно сохранен');
+      }
     } catch (error: unknown) {
       if (error instanceof Error) {
-        console.error('Critical Error:', error.message);
+        logError('Critical Error:', error.message);
+        if (isMountedRef.current) {
+          toast.error('Критическая ошибка: ' + error.message);
+        }
       } else {
-        console.error('Unknown error saving employee:', error);
+        logError('Unknown error saving employee:', error);
       }
     }
-  }, [fetchEmployees]);
+  }, [fetchEmployees, toast]);
 
   const handleDeleteEmployee = useCallback(async (
     id: string,
@@ -159,33 +268,33 @@ export function useEmployees(): UseEmployeesReturn {
       setEmployees(prev => prev.filter(e => e.id !== id));
       return;
     }
-    
+
     if (!supabase || !isAdmin) return;
 
     try {
       setIsLoading(true);
       await supabase.from('employee_attachments').delete().eq('employee_id', id);
-      
+
       const { data: stats } = await supabase
         .from('statistics_definitions')
         .select('id')
         .eq('owner_id', id);
-      
+
       if (stats && stats.length > 0) {
         const statIds = stats.map(s => s.id);
         await supabase.from('statistics_values').delete().in('definition_id', statIds);
         await supabase.from('statistics_definitions').delete().in('id', statIds);
       }
-      
+
       const { error } = await supabase.from('employees').delete().eq('id', id);
       if (error) throw error;
-      
+
       setEmployees(prev => prev.filter(e => e.id !== id));
     } catch (error: unknown) {
       if (error instanceof Error) {
-        console.error("Delete failed", error);
+        logError("Delete failed", error);
       } else {
-        console.error("Unknown error deleting employee:", error);
+        logError("Unknown error deleting employee:", error);
       }
     } finally {
       setIsLoading(false);
@@ -198,16 +307,16 @@ export function useEmployees(): UseEmployeesReturn {
     isOffline: boolean
   ) => {
     if (!isAdmin) return;
-    
+
     if (isOffline) {
       setEmployees(data);
       return;
     }
-    
+
     setIsLoading(true);
     const errors: string[] = [];
     let successCount = 0;
-    
+
     try {
       for (const emp of data) {
         try {
@@ -218,12 +327,12 @@ export function useEmployees(): UseEmployeesReturn {
           errors.push(`${emp.full_name || emp.id}: ${errorMessage}`);
         }
       }
-      
+
       if (errors.length > 0) {
-        console.warn('Ошибки при импорте:', errors);
+              debugWarn('Ошибки при импорте:', errors);
       }
     } catch (error) {
-      console.error('Критическая ошибка при импорте:', error);
+      logError('Критическая ошибка при импорте:', error);
     } finally {
       setIsLoading(false);
     }
