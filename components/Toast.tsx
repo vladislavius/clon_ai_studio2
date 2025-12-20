@@ -124,7 +124,7 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onRemove }) => {
       </div>
       <button
         onClick={handleRemove}
-        className="flex-shrink-0 p-1 hover:bg-black/5 rounded transition-colors"
+        className="flex-shrink-0 p-1 hover:bg-slate-100 rounded transition-colors"
         aria-label="Закрыть уведомление"
       >
         <X size={16} />

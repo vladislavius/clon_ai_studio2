@@ -1,14 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react'; // Добавьте useCallback
+import React, { useState, useEffect, useCallback } from 'react';
 import { StatisticDefinition, StatisticValue } from '../types';
 import { supabase } from '../supabaseClient';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Edit2, Trash2, Plus, X, Search, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
+import { useDebounce } from '../hooks/useDebounce';
 
 const StatisticsEngineering: React.FC = () => {
   const [definitions, setDefinitions] = useState<StatisticDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Debounce search term для оптимизации производительности
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   
   // Edit State for Definition
   const [editingDef, setEditingDef] = useState<Partial<StatisticDefinition> | null>(null);
@@ -76,7 +80,7 @@ const StatisticsEngineering: React.FC = () => {
       if (selectedStatForValues) fetchValues(selectedStatForValues.id);
   };
 
-  const filteredDefs = definitions.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredDefs = definitions.filter(d => d.title.toLowerCase().includes(debouncedSearchTerm.toLowerCase()));
 
   const getOwnerName = (id?: string) => {
       if (!id) return '-';

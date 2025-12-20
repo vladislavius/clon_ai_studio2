@@ -34,6 +34,7 @@ export interface Employee {
   emergency_contacts: EmergencyContact[];
   custom_fields: CustomField[];
   attachments: Attachment[];
+  version?: number; // For optimistic locking - автоматически увеличивается при каждом обновлении
 }
 
 export interface EmergencyContact {

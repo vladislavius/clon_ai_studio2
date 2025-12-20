@@ -111,3 +111,6 @@ ps aux | grep "vite\|node" | grep -v grep
 
 Если файл пустой или не существует, создайте его заново (см. `FIX_CONNECTION.md`).
 
+
+
+

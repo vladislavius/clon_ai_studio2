@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import { Lock, Mail, ArrowRight, Loader2, ShieldCheck, WifiOff } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Loader2, ShieldCheck, WifiOff, AlertCircle } from 'lucide-react';
+import { useRateLimit, MAX_ATTEMPTS } from '../hooks/useRateLimit';
 
 interface AuthProps {
   onBypass: () => void;
@@ -12,16 +13,56 @@ export default function Auth({ onBypass }: AuthProps) {
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'login' | 'forgot'>('login');
   const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null);
+  
+  // Rate limiting для защиты от брутфорса
+  const { checkRateLimit, recordAttempt, getDelay, getRemainingLockoutTime, state: rateLimitState } = useRateLimit();
+
+  // Показываем оставшееся время блокировки
+  useEffect(() => {
+    if (rateLimitState.locked && rateLimitState.lockoutUntil) {
+      const interval = setInterval(() => {
+        const remaining = getRemainingLockoutTime();
+        if (remaining > 0) {
+          const minutes = Math.ceil(remaining / 60000);
+          setMessage({
+            type: 'error',
+            text: `Слишком много неудачных попыток. Попробуйте через ${minutes} ${minutes === 1 ? 'минуту' : minutes < 5 ? 'минуты' : 'минут'}.`
+          });
+        } else {
+          clearInterval(interval);
+          setMessage(null);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [rateLimitState.locked, rateLimitState.lockoutUntil, getRemainingLockoutTime]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
 
+    // Проверяем rate limit перед попыткой
+    try {
+      checkRateLimit();
+    } catch (rateLimitError) {
+      const errorMessage = rateLimitError instanceof Error ? rateLimitError.message : 'Слишком много попыток';
+      setMessage({ type: 'error', text: errorMessage });
+      setLoading(false);
+      return;
+    }
+
     if (!supabase) {
         setMessage({ type: 'error', text: 'Ошибка подключения к базе данных.' });
         setLoading(false);
         return;
+    }
+
+    // Добавляем задержку перед запросом (экспоненциальная задержка)
+    const delay = getDelay();
+    if (delay > 0) {
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
 
     try {
@@ -30,13 +71,21 @@ export default function Auth({ onBypass }: AuthProps) {
           email,
           password,
         });
-        if (error) throw error;
+        if (error) {
+          recordAttempt(false); // Неудачная попытка
+          throw error;
+        }
+        recordAttempt(true); // Успешная попытка
         // Успешный вход перехватывается в App.tsx через onAuthStateChange
       } else if (mode === 'forgot') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: window.location.origin,
         });
-        if (error) throw error;
+        if (error) {
+          recordAttempt(false); // Неудачная попытка
+          throw error;
+        }
+        recordAttempt(true); // Успешная попытка
         setMessage({ type: 'success', text: 'Ссылка для сброса пароля отправлена на ваш Email.' });
       }
     } catch (error: unknown) {
@@ -87,8 +136,22 @@ export default function Auth({ onBypass }: AuthProps) {
             <form onSubmit={handleAuth} className="space-y-5">
                 {message && (
                     <div className={`p-3 rounded-lg text-sm flex items-start gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                        <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${message.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
+                        {message.type === 'error' && rateLimitState.locked ? (
+                            <AlertCircle className="flex-shrink-0 mt-0.5" size={16} />
+                        ) : (
+                            <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${message.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`} />
+                        )}
                         <span className="flex-1 break-words">{message.text}</span>
+                    </div>
+                )}
+
+                {/* Индикатор оставшихся попыток */}
+                {mode === 'login' && rateLimitState.attempts > 0 && !rateLimitState.locked && (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                        <div className="flex items-center gap-2">
+                            <AlertCircle size={14} />
+                            <span>Осталось попыток: {MAX_ATTEMPTS - rateLimitState.attempts} из {MAX_ATTEMPTS}</span>
+                        </div>
                     </div>
                 )}
 
@@ -97,7 +160,7 @@ export default function Auth({ onBypass }: AuthProps) {
                     <button 
                         type="button"
                         onClick={onBypass}
-                        className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all animate-in fade-in slide-in-from-top-2"
+                        className="w-full py-3 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all animate-in fade-in slide-in-from-top-2 shadow-md shadow-slate-200"
                     >
                         <WifiOff size={16} />
                         Войти в оффлайн-режиме
@@ -127,6 +190,7 @@ export default function Auth({ onBypass }: AuthProps) {
                             <input 
                                 type="password" 
                                 required 
+                                autoComplete="current-password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all text-slate-800"

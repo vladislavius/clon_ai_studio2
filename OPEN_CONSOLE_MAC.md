@@ -152,3 +152,6 @@ console.clear();
 
 **Самый простой способ:** `Cmd + Option + J` в Chrome/Edge или `Cmd + Option + C` в Safari! 🚀
 
+
+
+

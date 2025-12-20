@@ -1,9 +1,20 @@
-import React, { useCallback } from 'react'; // Добавьте useCallback
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { Employee as EmployeeType } from '../types';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Edit2, Trash2, User, Phone, Mail, MessageCircle, FileText, Printer, Hash } from 'lucide-react';
 import { format } from 'date-fns';
 import { exportEmployeeToPDF } from '../utils/exportUtils';
+import { sanitizeText, sanitizeURL } from '../utils/sanitize';
+
+// Условный импорт react-window (опционально)
+let FixedSizeGrid: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const reactWindow = require('react-window');
+  FixedSizeGrid = reactWindow.FixedSizeGrid;
+} catch (e) {
+  // react-window не установлен, используем обычный рендеринг
+}
 
 interface EmployeeListProps {
   employees: EmployeeType[];
@@ -12,6 +23,23 @@ interface EmployeeListProps {
 }
 
 const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerSize, setContainerSize] = useState({ width: 1200, height: 800 });
+  const VIRTUALIZATION_THRESHOLD = 50; // Включаем виртуализацию при >50 сотрудников
+
+  // Отслеживаем размер контейнера для виртуализации
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setContainerSize({ width: rect.width, height: rect.height });
+      }
+    };
+
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
   const getDeptColor = (deptId?: string) => {
     if (!deptId) return '#e2e8f0';
     return ORGANIZATION_STRUCTURE[deptId]?.color || '#e2e8f0';
@@ -130,22 +158,63 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
   const quickPrint = (e: React.MouseEvent, emp: EmployeeType) => {
     e.stopPropagation();
      
-     // Generate Emergency Contacts HTML
+     // Санитизируем все пользовательские данные для защиты от XSS
+     const safeName = sanitizeText(emp.full_name);
+     const safePosition = sanitizeText(emp.position || 'Должность не указана');
+     const safePhotoUrl = sanitizeURL(emp.photo_url || '');
+     const safeId = sanitizeText(emp.id);
+     const safeNickname = sanitizeText(emp.nickname || '');
+     const safeJoinDate = sanitizeText(emp.join_date || '-');
+     const safePhone = sanitizeText(emp.phone || '');
+     const safeEmail = sanitizeText(emp.email || '');
+     const safeTelegram = sanitizeText(emp.telegram || '');
+     const safeWhatsapp = sanitizeText(emp.whatsapp || '');
+     const safeActualAddress = sanitizeText(emp.actual_address || '-');
+     const safeRegistrationAddress = sanitizeText(emp.registration_address || '-');
+     const safeBirthDate = sanitizeText(emp.birth_date || '-');
+     const safeInn = sanitizeText(emp.inn || '-');
+     const safePassportNumber = sanitizeText(emp.passport_number || '-');
+     const safePassportDate = sanitizeText(emp.passport_date || '-');
+     const safePassportIssuer = sanitizeText(emp.passport_issuer || '-');
+     const safeForeignPassport = sanitizeText(emp.foreign_passport || '');
+     const safeForeignPassportDate = sanitizeText(emp.foreign_passport_date || '-');
+     const safeForeignPassportIssuer = sanitizeText(emp.foreign_passport_issuer || '-');
+     const safeBankName = sanitizeText(emp.bank_name || 'Не указан');
+     const safeBankDetails = sanitizeText(emp.bank_details || '-');
+     const safeCryptoWallet = sanitizeText(emp.crypto_wallet || '-');
+     const safeCryptoNetwork = sanitizeText(emp.crypto_network || 'NET');
+     const safeAdditionalInfo = sanitizeText(emp.additional_info || '');
+     
+     // Generate Emergency Contacts HTML с санитизацией
      const emergencyHtml = emp.emergency_contacts && emp.emergency_contacts.length > 0
         ? emp.emergency_contacts.map(c => `
             <div class="emergency-card">
-                <div class="ec-name">${c.name}</div>
-                <div class="ec-role">${c.relation || 'Родственник'}</div>
-                <div class="ec-phone">${c.phone}</div>
+                <div class="ec-name">${sanitizeText(c.name)}</div>
+                <div class="ec-role">${sanitizeText(c.relation || 'Родственник')}</div>
+                <div class="ec-phone">${sanitizeText(c.phone)}</div>
             </div>
           `).join('')
         : '<div style="font-size:11px; color:#94a3b8; font-style: italic;">Контакты не указаны</div>';
+
+     // Санитизируем названия департаментов
+     const safeDeptNames = emp.department?.map(d => {
+       const dept = ORGANIZATION_STRUCTURE[d];
+       return dept ? sanitizeText(dept.name.split('.')[1] || '') : '';
+     }).filter(Boolean).join(', ') || '-';
+     
+     const safeSubDeptNames = emp.subdepartment?.map(s => {
+       const deptId = emp.department?.[0];
+       if (!deptId) return sanitizeText(s);
+       const dept = ORGANIZATION_STRUCTURE[deptId];
+       const subDept = dept?.departments?.[s];
+       return subDept ? sanitizeText(subDept.name) : sanitizeText(s);
+     }).filter(Boolean).join(', ') || '-';
 
      const printContent = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>${emp.full_name}</title>
+          <title>${safeName}</title>
           <meta charset="utf-8">
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
           <style>
@@ -207,14 +276,14 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
         <body>
           <div class="page">
              <div class="header">
-                 <img src="${emp.photo_url || ''}" class="photo" onerror="this.src='https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b'" />
+                 <img src="${safePhotoUrl}" class="photo" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(safeName)}&background=f1f5f9&color=64748b'" />
                  <div class="header-info">
-                     <h1>${emp.full_name}</h1>
-                     <h2>${emp.position || 'Должность не указана'}</h2>
+                     <h1>${safeName}</h1>
+                     <h2>${safePosition}</h2>
                      <div class="badges">
-                        <span class="badge">ID: ${emp.id.substring(0,8)}</span>
-                        ${emp.nickname ? `<span class="badge">NIK: ${emp.nickname}</span>` : ''}
-                        <span class="badge">Принят: ${emp.join_date || '-'}</span>
+                        <span class="badge">ID: ${safeId.substring(0,8)}</span>
+                        ${safeNickname ? `<span class="badge">NIK: ${safeNickname}</span>` : ''}
+                        <span class="badge">Принят: ${safeJoinDate}</span>
                      </div>
                  </div>
              </div>
@@ -222,20 +291,20 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                 <div class="sidebar">
                     <div class="section">
                         <div class="section-title">CONTACTS</div>
-                        ${emp.phone ? `<div class="contact-item"><div class="contact-icon">Ph</div>${emp.phone}</div>` : ''}
-                        ${emp.email ? `<div class="contact-item"><div class="contact-icon">@</div>${emp.email}</div>` : ''}
-                        ${emp.telegram ? `<div class="contact-item"><div class="contact-icon">Tg</div>${emp.telegram}</div>` : ''}
-                        ${emp.whatsapp ? `<div class="contact-item"><div class="contact-icon">Wa</div>${emp.whatsapp}</div>` : ''}
+                        ${safePhone ? `<div class="contact-item"><div class="contact-icon">Ph</div>${safePhone}</div>` : ''}
+                        ${safeEmail ? `<div class="contact-item"><div class="contact-icon">@</div>${safeEmail}</div>` : ''}
+                        ${safeTelegram ? `<div class="contact-item"><div class="contact-icon">Tg</div>${safeTelegram}</div>` : ''}
+                        ${safeWhatsapp ? `<div class="contact-item"><div class="contact-icon">Wa</div>${safeWhatsapp}</div>` : ''}
                     </div>
                     <div class="section">
                         <div class="section-title">RESIDENCE</div>
                         <div class="address-box">
                             <div class="address-label">ACTUAL</div>
-                            <div class="address-val">${emp.actual_address || '-'}</div>
+                            <div class="address-val">${safeActualAddress}</div>
                         </div>
                         <div class="address-box">
                             <div class="address-label">REGISTRATION</div>
-                            <div class="address-val">${emp.registration_address || '-'}</div>
+                            <div class="address-val">${safeRegistrationAddress}</div>
                         </div>
                     </div>
                     <div class="section">
@@ -247,31 +316,31 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                     <div class="section">
                         <div class="section-title">ORGANIZATION & IDENTITY</div>
                         <div class="grid-2">
-                            <div><span class="label">DEPARTMENT</span><div class="value">${emp.department?.map(d => ORGANIZATION_STRUCTURE[d]?.name.split('.')[1] || '').join(', ') || '-'}</div></div>
-                            <div><span class="label">SUB-DEPARTMENT</span><div class="value">${emp.subdepartment?.map(s => { const deptId = emp.department?.[0]; return deptId ? ORGANIZATION_STRUCTURE[deptId]?.departments?.[s]?.name : s; }).join(', ') || '-'}</div></div>
-                            <div style="margin-top: 10px;"><span class="label">BIRTH DATE</span><div class="value">${emp.birth_date || '-'}</div></div>
-                             <div style="margin-top: 10px;"><span class="label">INN</span><div class="value"><span class="mono-bg">${emp.inn || '-'}</span></div></div>
+                            <div><span class="label">DEPARTMENT</span><div class="value">${safeDeptNames}</div></div>
+                            <div><span class="label">SUB-DEPARTMENT</span><div class="value">${safeSubDeptNames}</div></div>
+                            <div style="margin-top: 10px;"><span class="label">BIRTH DATE</span><div class="value">${safeBirthDate}</div></div>
+                             <div style="margin-top: 10px;"><span class="label">INN</span><div class="value"><span class="mono-bg">${safeInn}</span></div></div>
                         </div>
                     </div>
                     <div class="section">
                         <div class="section-title">PASSPORT DETAILS</div>
                         <div class="passport-box">
                              <div class="grid-2">
-                                <div><span class="label">SERIES & NUMBER</span><div class="value"><span class="mono-bg">${emp.passport_number || '-'}</span></div></div>
-                                <div><span class="label">DATE OF ISSUE</span><div class="value">${emp.passport_date || '-'}</div></div>
+                                <div><span class="label">SERIES & NUMBER</span><div class="value"><span class="mono-bg">${safePassportNumber}</span></div></div>
+                                <div><span class="label">DATE OF ISSUE</span><div class="value">${safePassportDate}</div></div>
                             </div>
-                            <div style="margin-top: 10px;"><span class="label">ISSUED BY</span><div class="value">${emp.passport_issuer || '-'}</div></div>
+                            <div style="margin-top: 10px;"><span class="label">ISSUED BY</span><div class="value">${safePassportIssuer}</div></div>
                         </div>
                     </div>
-                    ${emp.foreign_passport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${emp.foreign_passport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${emp.foreign_passport_date || '-'}</div></div></div><div style="margin-top: 10px;"><span class="label">AUTHORITY</span><div class="value">${emp.foreign_passport_issuer || '-'}</div></div></div></div>` : ''}
+                    ${safeForeignPassport ? `<div class="section"><div class="section-title">FOREIGN PASSPORT</div><div class="passport-box"><div class="grid-2"><div><span class="label">NUMBER</span><div class="value"><span class="mono-bg">${safeForeignPassport}</span></div></div><div><span class="label">VALID UNTIL / ISSUED</span><div class="value">${safeForeignPassportDate}</div></div></div><div style="margin-top: 10px;"><span class="label">AUTHORITY</span><div class="value">${safeForeignPassportIssuer}</div></div></div></div>` : ''}
                     <div class="section">
                         <div class="section-title">FINANCE</div>
-                        <div class="finance-row"><span class="finance-label">Bank Name</span><span class="finance-val">${emp.bank_name || 'Не указан'}</span></div>
-                        <div class="finance-row"><span class="finance-label">Account / Card</span><span class="finance-val">${emp.bank_details || '-'}</span></div>
-                         <div class="finance-row"><span class="finance-label">Crypto Wallet (${emp.crypto_network || 'NET'})</span><span class="finance-val">${emp.crypto_wallet || '-'}</span></div>
+                        <div class="finance-row"><span class="finance-label">Bank Name</span><span class="finance-val">${safeBankName}</span></div>
+                        <div class="finance-row"><span class="finance-label">Account / Card</span><span class="finance-val">${safeBankDetails}</span></div>
+                         <div class="finance-row"><span class="finance-label">Crypto Wallet (${safeCryptoNetwork})</span><span class="finance-val">${safeCryptoWallet}</span></div>
                     </div>
                     
-                    ${emp.additional_info ? `<div class="section"><div class="section-title">NOTES</div><div style="font-size:11px; color:#334155; line-height:1.5; border-left:2px solid #e2e8f0; padding-left:10px;">${emp.additional_info}</div></div>` : ''}
+                    ${safeAdditionalInfo ? `<div class="section"><div class="section-title">NOTES</div><div style="font-size:11px; color:#334155; line-height:1.5; border-left:2px solid #e2e8f0; padding-left:10px;">${safeAdditionalInfo}</div></div>` : ''}
                 </div>
              </div>
              <div class="footer">CONFIDENTIAL PERSONNEL RECORD • HR SYSTEM PRO • ${format(new Date(), 'dd.MM.yyyy')}</div>
@@ -296,8 +365,260 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
     );
   }
 
+  // Используем виртуализацию только если react-window установлен и сотрудников много
+  const shouldVirtualize = FixedSizeGrid && employees.length > VIRTUALIZATION_THRESHOLD;
+
+  // Если виртуализация не нужна или недоступна, используем обычный рендеринг
+  if (!shouldVirtualize) {
+    return (
+      <div 
+        ref={containerRef}
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 justify-items-center md:justify-items-stretch"
+      >
+        {employees.map((emp) => (
+        <div key={emp.id} onClick={() => onEdit(emp)} className="w-full max-w-[260px] md:max-w-none group bg-white rounded-xl md:rounded-2xl shadow-sm hover:shadow-md border border-slate-200 transition-all duration-300 overflow-hidden flex flex-col relative cursor-pointer hover:-translate-y-1">
+          
+          {/* Top colored banner - Compact on Mobile */}
+          <div className="h-14 md:h-20 w-full relative overflow-hidden" style={{ backgroundColor: getDeptColor(emp.department?.[0]) + '25' }}>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/30 rounded-full -mr-10 -mt-10 blur-xl"></div>
+            
+            <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onDelete(emp.id); }}
+                  className="p-1.5 bg-white/90 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
+                  title="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
+            </div>
+
+            <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+               <button 
+                  onClick={(e) => quickExportPDF(e, emp)}
+                  className="p-1.5 bg-white/90 hover:bg-red-50 text-red-500 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
+                  title="Экспорт PDF"
+                >
+                  <FileText size={14} />
+                </button>
+                <button 
+                  onClick={(e) => quickExportTxt(e, emp)}
+                  className="p-1.5 bg-white/90 hover:bg-white text-slate-500 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
+                  title="Экспорт TXT"
+                >
+                  <FileText size={14} />
+                </button>
+                <button 
+                  onClick={(e) => quickPrint(e, emp)}
+                  className="p-1.5 bg-white/90 hover:bg-white text-slate-500 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
+                  title="Печать"
+                >
+                  <Printer size={14} />
+                </button>
+            </div>
+
+          </div>
+          
+          <div className="px-3 pb-3 md:px-4 md:pb-4 flex-1 flex flex-col -mt-8 md:-mt-10">
+            <div className="relative mb-2 md:mb-3 self-start">
+              {/* Compact Avatar */}
+              <div className="w-14 h-14 md:w-20 md:h-20 rounded-xl md:rounded-2xl bg-white p-1 shadow-sm border border-slate-100">
+                 <div className="w-full h-full rounded-lg md:rounded-xl overflow-hidden bg-gray-100 relative">
+                    {emp.photo_url ? (
+                      <img 
+                        src={emp.photo_url} 
+                        alt={emp.full_name} 
+                        className="w-full h-full object-cover" 
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-300"><User size={24} className="md:w-8 md:h-8" /></div>
+                    )}
+                 </div>
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-white p-0.5 rounded-full shadow-sm border border-slate-100" title={getDeptName(emp.department?.[0])}>
+                  <div className="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[8px] md:text-[9px] font-black text-white" style={{ backgroundColor: getDeptColor(emp.department?.[0]) }}>
+                    {getDeptName(emp.department?.[0]).substring(0,2).toUpperCase()}
+                  </div>
+              </div>
+            </div>
+
+            <div className="mb-2 md:mb-3">
+              <h3 className="font-bold text-slate-800 text-sm md:text-base leading-tight mb-0.5 line-clamp-1">{emp.full_name}</h3>
+              <p className="text-[10px] md:text-xs font-bold text-blue-600 mb-1 line-clamp-1">{emp.position}</p>
+              
+              {/* Added NIK/ID Display */}
+              {emp.nickname && (
+                 <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-[8px] md:text-[9px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded flex items-center gap-1 border border-slate-100">
+                        <Hash size={9} />
+                        {emp.nickname}
+                    </span>
+                 </div>
+              )}
+
+              {emp.department?.[0] && emp.subdepartment?.[0] && (
+                 <p className="text-[9px] md:text-[10px] text-slate-400 font-medium line-clamp-1">
+                   {getSubDeptName(emp.department[0], emp.subdepartment[0])}
+                 </p>
+              )}
+            </div>
+
+            <div className="mt-auto space-y-1.5 md:space-y-2 pt-2 md:pt-3 border-t border-slate-50">
+              {emp.phone && (
+                <div className="flex items-center gap-2 text-[10px] md:text-xs text-slate-600 hover:text-slate-900 transition-colors">
+                  <Phone size={10} className="text-slate-400 flex-shrink-0 md:w-3 md:h-3" />
+                  <span className="truncate font-medium">{emp.phone}</span>
+                </div>
+              )}
+              {emp.email && (
+                <div className="flex items-center gap-2 text-[10px] md:text-xs text-slate-600 hover:text-slate-900 transition-colors">
+                  <Mail size={10} className="text-slate-400 flex-shrink-0 md:w-3 md:h-3" />
+                  <span className="truncate font-medium">{emp.email}</span>
+                </div>
+              )}
+              {emp.telegram && (
+                <div className="flex items-center gap-2 text-[10px] md:text-xs text-blue-500 hover:text-blue-600 transition-colors">
+                  <MessageCircle size={10} className="flex-shrink-0 md:w-3 md:h-3" />
+                  <span className="truncate font-medium">{emp.telegram}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+      </div>
+    );
+  }
+
+  // Виртуализированный рендеринг для больших списков (если react-window установлен)
+  if (FixedSizeGrid && employees.length > VIRTUALIZATION_THRESHOLD) {
+    const columnCount = Math.max(1, Math.floor((containerSize.width - 24) / 284));
+    const rowCount = Math.ceil(employees.length / columnCount);
+
+    const Cell = ({ columnIndex, rowIndex, style }: { columnIndex: number; rowIndex: number; style: React.CSSProperties }) => {
+      const index = rowIndex * columnCount + columnIndex;
+      const emp = employees[index];
+
+      if (!emp) {
+        return <div style={style} />;
+      }
+
+      return (
+        <div style={{ ...style, padding: '12px' }}>
+          <div
+            onClick={() => onEdit(emp)}
+            className="w-full h-full group bg-white rounded-xl md:rounded-2xl shadow-sm hover:shadow-md border border-slate-200 transition-all duration-300 overflow-hidden flex flex-col relative cursor-pointer hover:-translate-y-1"
+          >
+            <div className="h-14 md:h-20 w-full relative overflow-hidden" style={{ backgroundColor: getDeptColor(emp.department?.[0]) + '25' }}>
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/30 rounded-full -mr-10 -mt-10 blur-xl"></div>
+              
+              <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(emp.id); }}
+                  className="p-1.5 bg-white/90 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-lg shadow-sm backdrop-blur-sm transition-all border border-slate-100"
+                  title="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="px-3 pb-3 md:px-4 md:pb-4 flex-1 flex flex-col -mt-8 md:-mt-10">
+              <div className="relative mb-2 md:mb-3 self-start">
+                <div className="w-14 h-14 md:w-20 md:h-20 rounded-xl md:rounded-2xl bg-white p-1 shadow-sm border border-slate-100">
+                  <div className="w-full h-full rounded-lg md:rounded-xl overflow-hidden bg-gray-100 relative">
+                    {emp.photo_url ? (
+                      <img
+                        src={emp.photo_url}
+                        alt={emp.full_name}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-300"><User size={24} className="md:w-8 md:h-8" /></div>
+                    )}
+                  </div>
+                </div>
+                <div className="absolute -bottom-1 -right-1 bg-white p-0.5 rounded-full shadow-sm border border-slate-100" title={getDeptName(emp.department?.[0])}>
+                  <div className="w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center text-[8px] md:text-[9px] font-black text-white" style={{ backgroundColor: getDeptColor(emp.department?.[0]) }}>
+                    {getDeptName(emp.department?.[0]).substring(0, 2).toUpperCase()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-2 md:mb-3">
+                <h3 className="font-bold text-slate-800 text-sm md:text-base leading-tight mb-0.5 line-clamp-1">{emp.full_name}</h3>
+                <p className="text-[10px] md:text-xs font-bold text-blue-600 mb-1 line-clamp-1">{emp.position}</p>
+                
+                {emp.nickname && (
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-[8px] md:text-[9px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded flex items-center gap-1 border border-slate-100">
+                      <Hash size={9} />
+                      {emp.nickname}
+                    </span>
+                  </div>
+                )}
+
+                {emp.department?.[0] && emp.subdepartment?.[0] && (
+                  <p className="text-[9px] md:text-[10px] text-slate-400 font-medium line-clamp-1">
+                    {getSubDeptName(emp.department[0], emp.subdepartment[0])}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-auto space-y-1.5 md:space-y-2 pt-2 md:pt-3 border-t border-slate-50">
+                {emp.phone && (
+                  <div className="flex items-center gap-2 text-[10px] md:text-xs text-slate-600 hover:text-slate-900 transition-colors">
+                    <Phone size={10} className="text-slate-400 flex-shrink-0 md:w-3 md:h-3" />
+                    <span className="truncate font-medium">{emp.phone}</span>
+                  </div>
+                )}
+                {emp.email && (
+                  <div className="flex items-center gap-2 text-[10px] md:text-xs text-slate-600 hover:text-slate-900 transition-colors">
+                    <Mail size={10} className="text-slate-400 flex-shrink-0 md:w-3 md:h-3" />
+                    <span className="truncate font-medium">{emp.email}</span>
+                  </div>
+                )}
+                {emp.telegram && (
+                  <div className="flex items-center gap-2 text-[10px] md:text-xs text-blue-500 hover:text-blue-600 transition-colors">
+                    <MessageCircle size={10} className="flex-shrink-0 md:w-3 md:h-3" />
+                    <span className="truncate font-medium">{emp.telegram}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div ref={containerRef} className="w-full" style={{ height: containerSize.height || 800 }}>
+        <FixedSizeGrid
+          columnCount={columnCount}
+          columnWidth={284}
+          height={containerSize.height || 800}
+          rowCount={rowCount}
+          rowHeight={304}
+          width={containerSize.width || 1200}
+          className="custom-scrollbar"
+        >
+          {Cell}
+        </FixedSizeGrid>
+      </div>
+    );
+  }
+
+  // Обычный рендеринг для малых списков
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 justify-items-center md:justify-items-stretch">
+    <div 
+      ref={containerRef}
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 justify-items-center md:justify-items-stretch"
+    >
       {employees.map((emp) => (
         <div key={emp.id} onClick={() => onEdit(emp)} className="w-full max-w-[260px] md:max-w-none group bg-white rounded-xl md:rounded-2xl shadow-sm hover:shadow-md border border-slate-200 transition-all duration-300 overflow-hidden flex flex-col relative cursor-pointer hover:-translate-y-1">
           
