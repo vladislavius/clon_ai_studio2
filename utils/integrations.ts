@@ -1,274 +1,323 @@
+/**
+ * Утилиты для работы с токенами интеграций
+ * Безопасное хранение токенов на сервере вместо localStorage
+ */
 
+import { supabase } from '../supabaseClient';
 import { Employee } from '../types';
-import { format, addDays } from 'date-fns';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
 
-/**
- * Генерирует URL для добавления события в Google Calendar
- */
-export function generateGoogleCalendarUrl(
-  title: string,
-  description: string,
-  startDate: Date,
-  endDate?: Date,
-  location?: string
-): string {
-  const start = format(startDate, "yyyyMMdd'T'HHmmss");
-  const end = endDate ? format(endDate, "yyyyMMdd'T'HHmmss") : format(addDays(startDate, 1), "yyyyMMdd'T'HHmmss");
-  
-  const params = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: title,
-    details: description,
-    dates: `${start}/${end}`,
-    ...(location && { location }),
-  });
+export type IntegrationType = 'telegram' | 'slack' | 'email' | 'other';
 
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+export interface IntegrationToken {
+  id: string;
+  user_id: string;
+  integration_type: IntegrationType;
+  token_encrypted: string;
+  webhook_url?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
- * Генерирует URL для добавления события в Outlook Calendar
+ * Сохраняет токен интеграции в базе данных
+ * @param type - Тип интеграции
+ * @param token - Токен для сохранения
+ * @param webhookUrl - URL для webhook (опционально)
+ * @returns true если успешно, false если ошибка
  */
-export function generateOutlookCalendarUrl(
-  title: string,
-  description: string,
-  startDate: Date,
-  endDate?: Date,
-  location?: string
-): string {
-  const start = startDate.toISOString();
-  const end = endDate ? endDate.toISOString() : addDays(startDate, 1).toISOString();
-  
-  const params = new URLSearchParams({
-    subject: title,
-    body: description,
-    startdt: start,
-    enddt: end,
-    ...(location && { location }),
-  });
-
-  return `https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
-}
-
-/**
- * Создает событие календаря для дня рождения сотрудника
- */
-export function createBirthdayCalendarEvent(employee: Employee, year: number): {
-  googleUrl: string;
-  outlookUrl: string;
-  title: string;
-  description: string;
-} {
-  if (!employee.birth_date) {
-    throw new Error('Дата рождения не указана');
+export async function saveIntegrationToken(
+  type: IntegrationType,
+  token: string,
+  webhookUrl?: string
+): Promise<boolean> {
+  if (!supabase) {
+    console.error('Supabase не настроен');
+    return false;
   }
 
-  const birthDate = new Date(employee.birth_date);
-  const birthdayThisYear = new Date(year, birthDate.getMonth(), birthDate.getDate());
-  const age = year - birthDate.getFullYear();
+  try {
+    // Получаем текущего пользователя
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('Ошибка получения пользователя:', userError);
+      return false;
+    }
 
-  const title = `🎉 День рождения: ${employee.full_name}`;
-  const description = `День рождения сотрудника\n\n${employee.full_name}${employee.position ? `\nДолжность: ${employee.position}` : ''}${employee.department ? `\nДепартамент: ${employee.department.join(', ')}` : ''}\n\nИсполняется ${age} лет`;
+    // Сохраняем токен (в будущем можно добавить шифрование)
+    const { error } = await supabase
+      .from('integration_tokens')
+      .upsert({
+        user_id: user.id,
+        integration_type: type,
+        token_encrypted: token, // В будущем: зашифровать перед сохранением
+        webhook_url: webhookUrl || null,
+      }, {
+        onConflict: 'user_id,integration_type'
+      });
 
+    if (error) {
+      console.error('Ошибка сохранения токена:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Неожиданная ошибка при сохранении токена:', error);
+    return false;
+  }
+}
+
+/**
+ * Получает токен интеграции из базы данных
+ * @param type - Тип интеграции
+ * @returns Токен или null если не найден
+ */
+export async function getIntegrationToken(
+  type: IntegrationType
+): Promise<string | null> {
+  if (!supabase) {
+    console.error('Supabase не настроен');
+    return null;
+  }
+
+  try {
+    // Получаем текущего пользователя
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('Ошибка получения пользователя:', userError);
+      return null;
+    }
+
+    // Получаем токен
+    const { data, error } = await supabase
+      .from('integration_tokens')
+      .select('token_encrypted')
+      .eq('user_id', user.id)
+      .eq('integration_type', type)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // Токен не найден
+        return null;
+      }
+      console.error('Ошибка получения токена:', error);
+      return null;
+    }
+
+    // В будущем: расшифровать токен перед возвратом
+    return data.token_encrypted;
+  } catch (error) {
+    console.error('Неожиданная ошибка при получении токена:', error);
+    return null;
+  }
+}
+
+/**
+ * Удаляет токен интеграции из базы данных
+ * @param type - Тип интеграции
+ * @returns true если успешно, false если ошибка
+ */
+export async function deleteIntegrationToken(
+  type: IntegrationType
+): Promise<boolean> {
+  if (!supabase) {
+    console.error('Supabase не настроен');
+    return false;
+  }
+
+  try {
+    // Получаем текущего пользователя
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('Ошибка получения пользователя:', userError);
+      return false;
+    }
+
+    // Удаляем токен
+    const { error } = await supabase
+      .from('integration_tokens')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('integration_type', type);
+
+    if (error) {
+      console.error('Ошибка удаления токена:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Неожиданная ошибка при удалении токена:', error);
+    return false;
+  }
+}
+
+/**
+ * Получает все токены интеграций текущего пользователя
+ * @returns Массив токенов или пустой массив
+ */
+export async function getAllIntegrationTokens(): Promise<IntegrationToken[]> {
+  if (!supabase) {
+    console.error('Supabase не настроен');
+    return [];
+  }
+
+  try {
+    // Получаем текущего пользователя
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      console.error('Ошибка получения пользователя:', userError);
+      return [];
+    }
+
+    // Получаем все токены
+    const { data, error } = await supabase
+      .from('integration_tokens')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Ошибка получения токенов:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Неожиданная ошибка при получении токенов:', error);
+    return [];
+  }
+}
+
+/**
+ * Миграция токенов из localStorage в базу данных
+ * Вызывается один раз при первом использовании
+ */
+export async function migrateTokensFromLocalStorage(): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  try {
+    // Проверяем, есть ли токены в localStorage
+    const telegramToken = localStorage.getItem('telegram_bot_token');
+    const telegramChatId = localStorage.getItem('telegram_chat_id');
+    const slackWebhook = localStorage.getItem('slack_webhook');
+
+    // Мигрируем токены
+    if (telegramToken) {
+      const migrated = await saveIntegrationToken('telegram', telegramToken, telegramChatId || undefined);
+      if (migrated) {
+        localStorage.removeItem('telegram_bot_token');
+        if (telegramChatId) localStorage.removeItem('telegram_chat_id');
+        console.log('✅ Токен Telegram мигрирован в БД');
+      }
+    }
+
+    if (slackWebhook) {
+      const migrated = await saveIntegrationToken('slack', '', slackWebhook);
+      if (migrated) {
+        localStorage.removeItem('slack_webhook');
+        console.log('✅ Webhook Slack мигрирован в БД');
+      }
+    }
+  } catch (error) {
+    console.error('Ошибка миграции токенов:', error);
+  }
+}
+
+// ============================================================================
+// ФУНКЦИИ ДЛЯ РАБОТЫ С КАЛЕНДАРЯМИ И УВЕДОМЛЕНИЯМИ
+// ============================================================================
+
+/**
+ * Создает событие календаря для дня рождения
+ */
+export function createBirthdayCalendarEvent(employee: Employee, year: number) {
+  const birthDate = employee.birth_date ? new Date(employee.birth_date) : new Date();
+  const eventDate = new Date(year, birthDate.getMonth(), birthDate.getDate());
+  
   return {
-    googleUrl: generateGoogleCalendarUrl(title, description, birthdayThisYear),
-    outlookUrl: generateOutlookCalendarUrl(title, description, birthdayThisYear),
-    title,
-    description,
+    title: `День рождения: ${employee.full_name}`,
+    description: `День рождения сотрудника ${employee.full_name}${employee.position ? ` (${employee.position})` : ''}`,
+    date: eventDate,
   };
 }
 
 /**
- * Отправляет сообщение в Slack через webhook
- */
-export async function sendSlackNotification(
-  webhookUrl: string,
-  message: string,
-  channel?: string,
-  username?: string
-): Promise<boolean> {
-  try {
-    const payload = {
-      text: message,
-      ...(channel && { channel }),
-      ...(username && { username }),
-    };
-
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    return response.ok;
-  } catch (error) {
-    console.error('Slack notification error:', error);
-    return false;
-  }
-}
-
-/**
- * Форматирует уведомление о днях рождения для Slack
- */
-export function formatSlackBirthdayMessage(employees: Employee[]): string {
-  const today = employees.filter(emp => {
-    if (!emp.birth_date) return false;
-    const birthDate = new Date(emp.birth_date);
-    const today = new Date();
-    return birthDate.getMonth() === today.getMonth() && birthDate.getDate() === today.getDate();
-  });
-
-  if (today.length === 0) {
-    return 'Сегодня нет дней рождения 🎉';
-  }
-
-  let message = `🎉 *Дни рождения сегодня:*\n\n`;
-  today.forEach(emp => {
-    message += `• *${emp.full_name}*${emp.position ? ` (${emp.position})` : ''}\n`;
-  });
-
-  return message;
-}
-
-/**
- * Отправляет сообщение в Telegram через бота
- */
-export async function sendTelegramMessage(
-  botToken: string,
-  chatId: string,
-  message: string,
-  parseMode: 'HTML' | 'Markdown' = 'HTML'
-): Promise<boolean> {
-  try {
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: parseMode,
-      }),
-    });
-
-    return response.ok;
-  } catch (error) {
-    console.error('Telegram notification error:', error);
-    return false;
-  }
-}
-
-/**
- * Форматирует уведомление о днях рождения для Telegram
- */
-export function formatTelegramBirthdayMessage(employees: Employee[]): string {
-  const today = employees.filter(emp => {
-    if (!emp.birth_date) return false;
-    const birthDate = new Date(emp.birth_date);
-    const today = new Date();
-    return birthDate.getMonth() === today.getMonth() && birthDate.getDate() === today.getDate();
-  });
-
-  if (today.length === 0) {
-    return 'Сегодня нет дней рождения 🎉';
-  }
-
-  let message = '🎉 <b>Дни рождения сегодня:</b>\n\n';
-  today.forEach(emp => {
-    message += `• <b>${emp.full_name}</b>${emp.position ? ` (${emp.position})` : ''}\n`;
-  });
-
-  return message;
-}
-
-/**
- * Открывает календарь для добавления события
+ * Открывает календарь с событием
  */
 export function openCalendarEvent(
   calendarType: 'google' | 'outlook',
   title: string,
   description: string,
-  startDate: Date,
-  endDate?: Date,
-  location?: string
+  date: Date
 ): void {
-  const url = calendarType === 'google'
-    ? generateGoogleCalendarUrl(title, description, startDate, endDate, location)
-    : generateOutlookCalendarUrl(title, description, startDate, endDate, location);
-  
-  window.open(url, '_blank');
-}
+  const formattedDate = format(date, 'yyyyMMdd');
+  const encodedTitle = encodeURIComponent(title);
+  const encodedDescription = encodeURIComponent(description);
 
-/**
- * Интеграция с системами учета времени
- * Генерирует отчет о рабочем времени для сотрудника
- */
-export interface TimeTrackingEntry {
-  date: string;
-  hours: number;
-  project?: string;
-  description?: string;
-}
-
-export function generateTimeTrackingReport(
-  employee: Employee,
-  entries: TimeTrackingEntry[],
-  format: 'csv' | 'json' = 'csv'
-): string {
-  if (format === 'json') {
-    return JSON.stringify({
-      employee: {
-        id: employee.id,
-        name: employee.full_name,
-        position: employee.position,
-      },
-      entries,
-      totalHours: entries.reduce((sum, entry) => sum + entry.hours, 0),
-      period: {
-        start: entries.length > 0 ? entries[0].date : null,
-        end: entries.length > 0 ? entries[entries.length - 1].date : null,
-      },
-    }, null, 2);
+  let url = '';
+  if (calendarType === 'google') {
+    url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodedTitle}&details=${encodedDescription}&dates=${formattedDate}/${formattedDate}`;
+  } else if (calendarType === 'outlook') {
+    const endDate = new Date(date);
+    endDate.setDate(endDate.getDate() + 1);
+    const endFormatted = format(endDate, "yyyy-MM-dd'T'HH:mm:ss");
+    const startFormatted = format(date, "yyyy-MM-dd'T'HH:mm:ss");
+    url = `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodedTitle}&body=${encodedDescription}&startdt=${startFormatted}&enddt=${endFormatted}`;
   }
 
-  // CSV format
-  const headers = ['Дата', 'Часы', 'Проект', 'Описание'];
-  const rows = entries.map(entry => [
-    entry.date,
-    entry.hours.toString(),
-    entry.project || '',
-    entry.description || '',
-  ]);
-
-  return [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-  ].join('\n');
+  if (url) {
+    window.open(url, '_blank');
+  }
 }
 
 /**
- * Экспортирует отчет учета времени
+ * Форматирует сообщение для Slack о днях рождения
  */
-export function exportTimeTrackingReport(
-  employee: Employee,
-  entries: TimeTrackingEntry[],
-  format: 'csv' | 'json' = 'csv'
-): void {
-  const content = generateTimeTrackingReport(employee, entries, format);
-  const mimeType = format === 'json' ? 'application/json' : 'text/csv';
-  const extension = format === 'json' ? 'json' : 'csv';
-  
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `time_tracking_${employee.id}_${format(new Date(), 'yyyy-MM-dd')}.${extension}`;
-  a.click();
-  URL.revokeObjectURL(url);
+export function formatSlackBirthdayMessage(employees: Employee[]): string {
+  if (employees.length === 0) {
+    return 'Сегодня нет дней рождения 🎉';
+  }
+
+  const today = format(new Date(), 'd MMMM', { locale: ru });
+  let message = `🎂 *Дни рождения ${today}*\n\n`;
+
+  employees.forEach((emp, index) => {
+    const age = emp.birth_date 
+      ? new Date().getFullYear() - new Date(emp.birth_date).getFullYear()
+      : null;
+    message += `${index + 1}. *${emp.full_name}*`;
+    if (emp.position) message += ` - ${emp.position}`;
+    if (age) message += ` (${age} лет)`;
+    message += '\n';
+  });
+
+  return message;
 }
 
+/**
+ * Форматирует сообщение для Telegram о днях рождения
+ */
+export function formatTelegramBirthdayMessage(employees: Employee[]): string {
+  if (employees.length === 0) {
+    return 'Сегодня нет дней рождения 🎉';
+  }
+
+  const today = format(new Date(), 'd MMMM', { locale: ru });
+  let message = `🎂 <b>Дни рождения ${today}</b>\n\n`;
+
+  employees.forEach((emp, index) => {
+    const age = emp.birth_date 
+      ? new Date().getFullYear() - new Date(emp.birth_date).getFullYear()
+      : null;
+    message += `${index + 1}. <b>${emp.full_name}</b>`;
+    if (emp.position) message += ` - ${emp.position}`;
+    if (age) message += ` (${age} лет)`;
+    message += '\n';
+  });
+
+  return message;
+}

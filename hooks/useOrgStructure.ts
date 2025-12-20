@@ -40,22 +40,24 @@ export function useOrgStructure(): UseOrgStructureReturn {
             }
             const content = item.content as Partial<Department> | null;
             // Используем данные из отдельных колонок, если они есть, иначе из content
-            const description = (item.description as string) || content?.description;
-            const longDescription = (item.long_description as string) || content?.longDescription;
-            const goal = (item.goal as string) || content?.goal;
-            const vfp = (item.vfp as string) || content?.vfp;
-            const manager = (item.manager as string) || content?.manager;
+            // Приоритет: прямая колонка > content > дефолтное значение
+            const description = (item.description as string)?.trim() || content?.description || dbOrg[item.node_id].description;
+            const longDescription = (item.long_description as string)?.trim() || content?.longDescription || dbOrg[item.node_id].longDescription;
+            const goal = (item.goal as string)?.trim() || content?.goal || dbOrg[item.node_id].goal;
+            const vfp = (item.vfp as string)?.trim() || content?.vfp || dbOrg[item.node_id].vfp;
+            const manager = (item.manager as string)?.trim() || content?.manager || dbOrg[item.node_id].manager;
             
             // Правильно объединяем данные из БД с дефолтными значениями
+            // Сначала распространяем content, потом перезаписываем приоритетными значениями из прямых колонок
             dbOrg[item.node_id] = {
               ...dbOrg[item.node_id],
               ...content,
-              // Приоритет отдельным колонкам, если они есть
-              description: description || dbOrg[item.node_id].description,
-              longDescription: longDescription || dbOrg[item.node_id].longDescription,
-              goal: goal || dbOrg[item.node_id].goal,
-              vfp: vfp || dbOrg[item.node_id].vfp,
-              manager: manager || dbOrg[item.node_id].manager,
+              // Приоритет отдельным колонкам - они перезаписывают значения из content
+              description: description,
+              longDescription: longDescription,
+              goal: goal,
+              vfp: vfp,
+              manager: manager,
               // Убеждаемся, что массивы правильно загружаются
               functions: Array.isArray(content?.functions) ? content.functions : (dbOrg[item.node_id].functions || []),
               troubleSigns: Array.isArray(content?.troubleSigns) ? content.troubleSigns : (dbOrg[item.node_id].troubleSigns || []),
@@ -75,12 +77,19 @@ export function useOrgStructure(): UseOrgStructureReturn {
             for (const d in dbOrg) {
               if (dbOrg[d].departments && typeof item.node_id === 'string' && dbOrg[d].departments![item.node_id]) {
                 const content = item.content as Partial<Department> | null;
-                if (content) {
-                  dbOrg[d].departments![item.node_id] = {
-                    ...dbOrg[d].departments![item.node_id],
-                    ...content
-                  };
-                }
+                // Используем данные из отдельных колонок, если они есть, иначе из content
+                const vfp = (item.vfp as string) || content?.vfp;
+                const manager = (item.manager as string) || content?.manager;
+                const description = (item.description as string) || content?.description;
+                
+                dbOrg[d].departments![item.node_id] = {
+                  ...dbOrg[d].departments![item.node_id],
+                  ...content,
+                  // Приоритет отдельным колонкам, если они есть
+                  vfp: vfp || dbOrg[d].departments![item.node_id].vfp,
+                  manager: manager || dbOrg[d].departments![item.node_id].manager,
+                  description: description || dbOrg[d].departments![item.node_id].description,
+                };
               }
             }
           }

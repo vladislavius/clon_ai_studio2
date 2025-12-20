@@ -16,6 +16,7 @@ import { useEmployees } from './hooks/useEmployees';
 import { useOrgStructure } from './hooks/useOrgStructure';
 import { useEmployeeFilters } from './hooks/useEmployeeFilters';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
+import { useDebounce } from './hooks/useDebounce';
 
 const DEMO_EMPLOYEES: Employee[] = [
   {
@@ -95,6 +96,9 @@ function App() {
       onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
+  // Debounce search term для оптимизации производительности
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
   // Fetch data when session is available
   useEffect(() => {
     if (session && !isOffline) {
@@ -106,7 +110,8 @@ function App() {
   }, [session, isOffline, fetchEmployees, fetchOrgMetadata, setEmployees]);
 
   // Employee filters hook (уже мемоизирован внутри)
-  const { filteredEmployees } = useEmployeeFilters({ employees, searchTerm, deptFilter });
+  // Используем debouncedSearchTerm вместо searchTerm для оптимизации
+  const { filteredEmployees } = useEmployeeFilters({ employees, searchTerm: debouncedSearchTerm, deptFilter });
 
   // Pull-to-refresh для мобильных
   const handleRefresh = useCallback(async () => {

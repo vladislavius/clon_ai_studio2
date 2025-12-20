@@ -1,8 +1,9 @@
-import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react'; // Добавлен useCallback
+import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 import { Employee, Department, SubDepartment } from '../types';
 import { User, X, Search, FileText, ChevronRight, Users, Crown, Target, Award, Copy, Check, MessageCircle, Phone, Hash, AlertTriangle, Zap, ChevronDown, ChevronUp, Edit2, Save, Trash2, Plus } from 'lucide-react';
 import { useToast } from './Toast';
+import { useDebounce } from '../hooks/useDebounce';
 
 interface OrgChartProps {
   employees: Employee[];
@@ -24,6 +25,9 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
   const [searchTerm, setSearchTerm] = useState('');
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Debounce search term для оптимизации производительности
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   
   // Local edit state for the drawer
   interface EditBuffer {
@@ -81,8 +85,8 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
           }
           return deptMatch;
       }).filter(emp => 
-        emp.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        emp.position.toLowerCase().includes(searchTerm.toLowerCase())
+        emp.full_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) || 
+        emp.position.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
       );
   };
 

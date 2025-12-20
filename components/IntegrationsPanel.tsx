@@ -1,15 +1,19 @@
-import React, { useState, useCallback } from 'react'; // Добавлен useCallback
+import React, { useState, useCallback, useEffect } from 'react';
 import { Calendar, Mail, MessageSquare, Clock, Settings, CheckCircle2, X, ExternalLink } from 'lucide-react';
 import { Employee } from '../types';
+import { getTodayBirthdays, getUpcomingBirthdays } from '../utils/notifications';
+import { useToast } from './Toast';
 import { 
+  saveIntegrationToken, 
+  getIntegrationToken, 
+  getAllIntegrationTokens,
+  migrateTokensFromLocalStorage,
   openCalendarEvent, 
   createBirthdayCalendarEvent,
   formatSlackBirthdayMessage,
   formatTelegramBirthdayMessage,
+  type IntegrationToken
 } from '../utils/integrations';
-import { getTodayBirthdays, getUpcomingBirthdays } from '../utils/notifications';
-import { useToast } from './Toast';
-import { secureStorage } from '../utils/secureStorage';
 
 interface IntegrationsPanelProps {
   employees: Employee[];
@@ -18,21 +22,101 @@ interface IntegrationsPanelProps {
 
 const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ employees, isAdmin }) => {
   const toast = useToast();
-  const [slackWebhook, setSlackWebhook] = useState(secureStorage.getItem('slack_webhook') || '');
-  const [telegramBotToken, setTelegramBotToken] = useState(secureStorage.getItem('telegram_bot_token') || '');
-  const [telegramChatId, setTelegramChatId] = useState(secureStorage.getItem('telegram_chat_id') || '');
+  const [slackWebhook, setSlackWebhook] = useState('');
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
   const [telegramStatus, setTelegramStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+  const [loading, setLoading] = useState(true);
 
-  const saveSlackConfig = () => {
-    secureStorage.setItem('slack_webhook', slackWebhook);
-    toast.success('Настройки Slack сохранены');
+  // Загрузка токенов из БД при монтировании компонента
+  useEffect(() => {
+    const loadTokens = async () => {
+      setLoading(true);
+      try {
+        // Сначала мигрируем токены из localStorage (если есть)
+        await migrateTokensFromLocalStorage();
+
+        // Загружаем токены из БД
+        const tokens = await getAllIntegrationTokens();
+
+        // Обрабатываем Slack токен
+        const slackToken = tokens.find(t => t.integration_type === 'slack');
+        if (slackToken?.webhook_url) {
+          setSlackWebhook(slackToken.webhook_url);
+        }
+
+        // Обрабатываем Telegram токен
+        // Для Telegram: token_encrypted содержит bot token, webhook_url содержит chat ID
+        const telegramToken = tokens.find(t => t.integration_type === 'telegram');
+        if (telegramToken) {
+          if (telegramToken.token_encrypted) {
+            setTelegramBotToken(telegramToken.token_encrypted);
+          }
+          if (telegramToken.webhook_url) {
+            setTelegramChatId(telegramToken.webhook_url);
+          }
+        }
+
+        // Fallback на localStorage для обратной совместимости (если миграция не произошла)
+        if (!slackToken && typeof window !== 'undefined') {
+          const localSlack = localStorage.getItem('slack_webhook');
+          if (localSlack) setSlackWebhook(localSlack);
+        }
+
+        if (!telegramToken && typeof window !== 'undefined') {
+          const localToken = localStorage.getItem('telegram_bot_token');
+          const localChatId = localStorage.getItem('telegram_chat_id');
+          if (localToken) setTelegramBotToken(localToken);
+          if (localChatId) setTelegramChatId(localChatId);
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки токенов:', error);
+        toast.error('Ошибка загрузки настроек интеграций');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTokens();
+  }, [toast]);
+
+  const saveSlackConfig = async () => {
+    if (!slackWebhook.trim()) {
+      toast.error('Укажите Webhook URL');
+      return;
+    }
+
+    const success = await saveIntegrationToken('slack', '', slackWebhook.trim());
+    if (success) {
+      toast.success('Настройки Slack сохранены');
+      // Удаляем из localStorage если там был
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('slack_webhook');
+      }
+    } else {
+      toast.error('Ошибка сохранения настроек Slack');
+    }
   };
 
-  const saveTelegramConfig = () => {
-    secureStorage.setItem('telegram_bot_token', telegramBotToken);
-    secureStorage.setItem('telegram_chat_id', telegramChatId);
-    toast.success('Настройки Telegram сохранены');
-    setTelegramStatus('idle');
+  const saveTelegramConfig = async () => {
+    if (!telegramBotToken.trim() || !telegramChatId.trim()) {
+      toast.error('Заполните токен бота и Chat ID');
+      return;
+    }
+
+    // Для Telegram: сохраняем bot token в token_encrypted, chat ID в webhook_url
+    const success = await saveIntegrationToken('telegram', telegramBotToken.trim(), telegramChatId.trim());
+    if (success) {
+      toast.success('Настройки Telegram сохранены');
+      setTelegramStatus('idle');
+      // Удаляем из localStorage если там были
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('telegram_bot_token');
+        localStorage.removeItem('telegram_chat_id');
+      }
+    } else {
+      toast.error('Ошибка сохранения настроек Telegram');
+    }
   };
 
   const checkTelegramConnection = useCallback(async () => {
