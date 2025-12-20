@@ -27,8 +27,22 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
   interface EditBuffer {
     deptId?: string;
     subDeptId?: string;
-    field: 'goal' | 'vfp' | 'description' | 'manager';
-    value: string;
+    field?: 'goal' | 'vfp' | 'description' | 'manager';
+    value?: string;
+    // Department fields
+    name?: string;
+    fullName?: string;
+    description?: string;
+    longDescription?: string;
+    vfp?: string;
+    goal?: string;
+    manager?: string;
+    mainStat?: string;
+    functions?: string[];
+    troubleSigns?: string[];
+    developmentActions?: string[];
+    // SubDepartment fields
+    code?: string;
   }
   const [editBuffer, setEditBuffer] = useState<EditBuffer | null>(null);
   const [companyEditMode, setCompanyEditMode] = useState<'goal' | 'vfp' | null>(null);
@@ -74,9 +88,37 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
       if (!selectedDeptId) return;
       const dept = orgStructure[selectedDeptId];
       if (selectedSubDeptId && dept.departments) {
-          setEditBuffer({ ...dept.departments[selectedSubDeptId] });
+          const subDept = dept.departments[selectedSubDeptId];
+          setEditBuffer({ 
+              subDeptId: selectedSubDeptId,
+              deptId: selectedDeptId,
+              field: 'description',
+              value: '',
+              ...subDept,
+              name: subDept.name,
+              code: subDept.code,
+              description: subDept.description || '',
+              vfp: subDept.vfp || '',
+              manager: subDept.manager || '',
+          });
       } else {
-          setEditBuffer({ ...dept });
+          setEditBuffer({ 
+              deptId: selectedDeptId,
+              field: 'description',
+              value: '',
+              ...dept,
+              name: dept.name,
+              fullName: dept.fullName,
+              description: dept.description || '',
+              longDescription: dept.longDescription || '',
+              vfp: dept.vfp || '',
+              goal: dept.goal || '',
+              manager: dept.manager || '',
+              mainStat: dept.mainStat || '',
+              functions: dept.functions || [],
+              troubleSigns: dept.troubleSigns || [],
+              developmentActions: dept.developmentActions || [],
+          });
       }
       setIsEditing(true);
   };
@@ -84,11 +126,39 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
   const handleSaveEdit = () => {
       if (!editBuffer || !selectedDeptId) return;
       const newStruct = { ...orgStructure };
+      
       if (selectedSubDeptId && newStruct[selectedDeptId].departments) {
-          newStruct[selectedDeptId].departments![selectedSubDeptId] = editBuffer as SubDepartment;
+          // Обновляем поддепартамент
+          const subDept = {
+              id: selectedSubDeptId,
+              name: editBuffer.name || '',
+              code: editBuffer.code || '',
+              manager: editBuffer.manager || '',
+              description: editBuffer.description || '',
+              vfp: editBuffer.vfp || '',
+          } as SubDepartment;
+          
+          newStruct[selectedDeptId].departments![selectedSubDeptId] = subDept;
       } else {
-          newStruct[selectedDeptId] = { ...newStruct[selectedDeptId], ...editBuffer };
+          // Обновляем департамент
+          const dept = {
+              ...newStruct[selectedDeptId],
+              name: editBuffer.name || newStruct[selectedDeptId].name,
+              fullName: editBuffer.fullName || newStruct[selectedDeptId].fullName,
+              description: editBuffer.description || newStruct[selectedDeptId].description,
+              longDescription: editBuffer.longDescription || newStruct[selectedDeptId].longDescription,
+              vfp: editBuffer.vfp || newStruct[selectedDeptId].vfp,
+              goal: editBuffer.goal || newStruct[selectedDeptId].goal,
+              manager: editBuffer.manager || newStruct[selectedDeptId].manager,
+              mainStat: editBuffer.mainStat || newStruct[selectedDeptId].mainStat,
+              functions: editBuffer.functions || newStruct[selectedDeptId].functions || [],
+              troubleSigns: editBuffer.troubleSigns || newStruct[selectedDeptId].troubleSigns || [],
+              developmentActions: editBuffer.developmentActions || newStruct[selectedDeptId].developmentActions || [],
+          };
+          
+          newStruct[selectedDeptId] = dept;
       }
+      
       onUpdateOrg(newStruct);
       setIsEditing(false);
       setEditBuffer(null);
@@ -377,7 +447,20 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                 filteredList.map(emp => (
                                     <div key={emp.id} onClick={() => onSelectEmployee(emp)} className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex gap-4 items-start cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group/card">
                                         <div className="w-14 h-14 rounded-xl bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-100 shadow-sm relative">
-                                             {emp.photo_url ? (<img src={emp.photo_url} className="w-full h-full object-cover" onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}/>) : (<div className="w-full h-full flex items-center justify-center text-slate-400"><User size={24}/></div>)}
+                                             {emp.photo_url ? (
+                                                <img 
+                                                    src={emp.photo_url} 
+                                                    className="w-full h-full object-cover" 
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    alt={emp.full_name}
+                                                    onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
+                                                />
+                                             ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                                    <User size={24}/>
+                                                </div>
+                                             )}
                                              <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-black/20 to-transparent"></div>
                                         </div>
                                         <div className="flex-1 min-w-0">

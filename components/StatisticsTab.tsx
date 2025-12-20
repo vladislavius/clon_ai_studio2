@@ -5,9 +5,8 @@ import { ORGANIZATION_STRUCTURE, HANDBOOK_STATISTICS } from '../constants';
 import StatsChart from './StatsChart';
 import ConfirmationModal from './ConfirmationModal';
 import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet, Target, Award, Crown, FileText, BarChart3 } from 'lucide-react';
-import { format } from 'date-fns';
-import { exportStatisticsToCSV, exportStatisticsToExcel } from '../utils/exportUtils';
-import AnalyticsDashboard from './AnalyticsDashboard';
+import { format, startOfWeek } from 'date-fns';
+import { exportStatisticsToCSV, exportStatisticsToExcel, exportStatisticsWeekly } from '../utils/exportUtils';
 import { analyzeTrend, getFilteredValues } from '../utils/statistics';
 import { useToast } from './Toast';
 import { useErrorHandler } from '../utils/errorHandler';
@@ -56,7 +55,8 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   const [definitions, setDefinitions] = useState<StatisticDefinition[]>([]);
   const [allLatestValues, setAllLatestValues] = useState<Record<string, StatisticValue[]>>({});
   const [selectedPeriod, setSelectedPeriod] = useState<string>('3w');
-  const [displayMode, setDisplayMode] = useState<'dashboard' | 'list' | 'analytics'>('dashboard');
+  const [displayMode, setDisplayMode] = useState<'dashboard' | 'list'>('dashboard');
+  const [trendFilter, setTrendFilter] = useState<'all' | 'growing' | 'declining'>('all');
   const [expandedStatId, setExpandedStatId] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingStatDef, setEditingStatDef] = useState<Partial<StatisticDefinition> | null>(null);
@@ -132,6 +132,15 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       }
   };
 
+  const handleExportWeekly = () => {
+      try {
+        exportStatisticsWeekly(definitions, allLatestValues);
+        toast.success('Шаблон для недельных данных экспортирован');
+      } catch (error) {
+        handleError(error, 'Ошибка при экспорте недельных данных');
+      }
+  };
+
   const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -147,47 +156,58 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
             }
             
             const lines = content.split('\n');
-            let importCount = 0;
-            const errors: string[] = [];
+            const headers = lines[0]?.split(',').map(h => h.replace(/"/g, '').trim()) || [];
             
-            for (let i = 1; i < lines.length; i++) {
-              if (!lines[i].trim()) continue;
-              try {
-                const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-                const statId = cols[0]?.replace(/"/g, '').trim();
-                const dateInput = cols[9]?.replace(/"/g, '').trim();
-                const valInput = cols[10]?.replace(/"/g, '').trim();
-                
-                if (statId && dateInput && valInput && !isNaN(parseFloat(valInput))) {
-                  const payload = { definition_id: statId, date: dateInput, value: parseFloat(valInput) };
+            // Проверяем, это недельный формат (есть даты в заголовках) или обычный
+            const isWeeklyFormat = headers.some(h => /\d{2}\.\d{2}\.\d{4}/.test(h));
+            
+            if (isWeeklyFormat) {
+              // Импорт недельных данных
+              await handleImportWeeklyData(lines, headers);
+            } else {
+              // Обычный импорт
+              let importCount = 0;
+              const errors: string[] = [];
+              
+              for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                try {
+                  const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                  const statId = cols[0]?.replace(/"/g, '').trim();
+                  const dateInput = cols[9]?.replace(/"/g, '').trim();
+                  const valInput = cols[10]?.replace(/"/g, '').trim();
                   
-                  if (isOffline || !supabase) {
-                    setAllLatestValues(prev => { 
-                      const existing = prev[statId] || []; 
-                      return { ...prev, [statId]: [...existing, { ...payload, id: `local-${Date.now()}-${i}` }] }; 
-                    });
-                  } else {
-                    const { error } = await supabase.from('statistics_values').insert([payload]);
-                    if (error) {
-                      errors.push(`Строка ${i + 1}: ${error.message}`);
-                      continue;
+                  if (statId && dateInput && valInput && !isNaN(parseFloat(valInput))) {
+                    const payload = { definition_id: statId, date: dateInput, value: parseFloat(valInput) };
+                    
+                    if (isOffline || !supabase) {
+                      setAllLatestValues(prev => { 
+                        const existing = prev[statId] || []; 
+                        return { ...prev, [statId]: [...existing, { ...payload, id: `local-${Date.now()}-${i}` }] }; 
+                      });
+                    } else {
+                      const { error } = await supabase.from('statistics_values').insert([payload]);
+                      if (error) {
+                        errors.push(`Строка ${i + 1}: ${error.message}`);
+                        continue;
+                      }
                     }
+                    importCount++;
                   }
-                  importCount++;
+                } catch (rowError) {
+                  errors.push(`Строка ${i + 1}: ошибка парсинга`);
                 }
-              } catch (rowError) {
-                errors.push(`Строка ${i + 1}: ошибка парсинга`);
               }
-            }
-            
-            if (importCount > 0) {
-              toast.success(`Успешно импортировано значений: ${importCount}`);
-              await fetchAllValues();
-            }
-            
-            if (errors.length > 0) {
-              toast.warning(`Ошибки при импорте: ${errors.length} строк`);
-              console.warn('Ошибки импорта:', errors);
+              
+              if (importCount > 0) {
+                toast.success(`Успешно импортировано значений: ${importCount}`);
+                await fetchAllValues();
+              }
+              
+              if (errors.length > 0) {
+                toast.warning(`Ошибки при импорте: ${errors.length} строк`);
+                console.warn('Ошибки импорта:', errors);
+              }
             }
           } catch (error) {
             handleError(error, 'Ошибка при чтении CSV файла');
@@ -203,6 +223,89 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       } catch (error) {
         handleError(error, 'Ошибка при импорте CSV');
       }
+  };
+
+  const handleImportWeeklyData = async (lines: string[], headers: string[]) => {
+    const { parse } = await import('date-fns');
+    let importCount = 0;
+    const errors: string[] = [];
+    
+    // Находим индексы колонок с датами (недели)
+    const weekIndices: number[] = [];
+    headers.forEach((h, idx) => {
+      if (/\d{2}\.\d{2}\.\d{4}/.test(h)) {
+        weekIndices.push(idx);
+      }
+    });
+
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      try {
+        const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+        const statId = cols[0]?.replace(/"/g, '').trim();
+        
+        if (!statId) continue;
+
+        // Обрабатываем каждую неделю
+        for (const weekIdx of weekIndices) {
+          const weekDateStr = headers[weekIdx];
+          const valueStr = cols[weekIdx]?.replace(/"/g, '').trim();
+          
+          if (!valueStr || valueStr === '') continue;
+          
+          try {
+            // Парсим дату недели (dd.MM.yyyy) и конвертируем в начало недели
+            const weekDate = parse(weekDateStr, 'dd.MM.yyyy', new Date());
+            const weekStart = startOfWeek(weekDate, { weekStartsOn: 1 });
+            const dateStr = format(weekStart, 'yyyy-MM-dd');
+            const value = parseFloat(valueStr);
+            
+            if (isNaN(value)) continue;
+
+            const payload = { definition_id: statId, date: dateStr, value };
+            
+            if (isOffline || !supabase) {
+              setAllLatestValues(prev => {
+                const existing = prev[statId] || [];
+                // Проверяем, нет ли уже значения для этой даты
+                const existingIndex = existing.findIndex(v => v.date === dateStr);
+                if (existingIndex >= 0) {
+                  const updated = [...existing];
+                  updated[existingIndex] = { ...updated[existingIndex], value };
+                  return { ...prev, [statId]: updated };
+                }
+                return { ...prev, [statId]: [...existing, { ...payload, id: `local-${Date.now()}-${i}-${weekIdx}` }] };
+              });
+            } else {
+              // Используем upsert для обновления или создания
+              const { error } = await supabase
+                .from('statistics_values')
+                .upsert([payload], { onConflict: 'definition_id,date' });
+              
+              if (error) {
+                errors.push(`Строка ${i + 1}, неделя ${weekDateStr}: ${error.message}`);
+                continue;
+              }
+            }
+            importCount++;
+          } catch (dateError) {
+            errors.push(`Строка ${i + 1}, неделя ${weekDateStr}: ошибка парсинга даты`);
+          }
+        }
+      } catch (rowError) {
+        errors.push(`Строка ${i + 1}: ошибка парсинга`);
+      }
+    }
+    
+    if (importCount > 0) {
+      toast.success(`Успешно импортировано недельных значений: ${importCount}`);
+      await fetchAllValues();
+    }
+    
+    if (errors.length > 0) {
+      toast.warning(`Ошибки при импорте: ${errors.length} значений`);
+      console.warn('Ошибки импорта недельных данных:', errors);
+    }
   };
 
   const handleSaveDefinition = async () => {
@@ -391,7 +494,11 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   const renderStatCard = (stat: StatisticDefinition, deptColor: string, contextKey: string) => {
       const vals = getFilteredValuesForStat(stat.id);
       const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
-      const trendColorHex = isGood ? "#10b981" : "#f43f5e"; 
+      const trendColorHex = isGood ? "#10b981" : "#f43f5e";
+      
+      // Фильтрация по тренду
+      if (trendFilter === 'growing' && direction !== 'up') return null;
+      if (trendFilter === 'declining' && direction !== 'down') return null; 
       return (
           <div key={`${contextKey}-${stat.id}`} onClick={() => !isEditMode && setExpandedStatId(stat.id)} className={`relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[210px] md:h-[240px] transition-all group ${isEditMode ? 'ring-2 ring-blue-400 ring-offset-2' : 'cursor-pointer hover:shadow-md hover:border-slate-300'}`}>
               <div className="absolute top-0 left-0 bottom-0 w-1" style={{backgroundColor: deptColor}}></div>
@@ -580,7 +687,6 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                  <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
                      <button onClick={() => setDisplayMode('dashboard')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'dashboard' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><LayoutDashboard size={16}/> Дашборд</button>
                      <button onClick={() => setDisplayMode('list')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'list' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><List size={16}/> Список</button>
-                     <button onClick={() => setDisplayMode('analytics')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'analytics' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><BarChart3 size={16}/> Аналитика</button>
                  </div>
                  {isAdmin && (
                      <div className="flex items-center gap-2">
@@ -588,10 +694,33 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                          <button onClick={() => fileInputRef.current?.click()} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer" title="Импорт CSV"><Upload size={18} /></button>
                          <button onClick={handleExportStats} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 cursor-pointer" title="Экспорт CSV (Краткий)"><Download size={18} /></button>
                          <button onClick={handleExportExcel} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 cursor-pointer" title="Экспорт Excel (Детальный)"><FileText size={18} /></button>
+                         <button onClick={handleExportWeekly} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer" title="Экспорт недельных данных (Шаблон)"><FileSpreadsheet size={18} /></button>
                          <button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-lg border transition-all cursor-pointer ${isEditMode ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`} title="Конструктор (Редактирование)"><Edit2 size={18}/></button>
                      </div>
                  )}
              </div>
+             {displayMode === 'dashboard' && (
+                 <div className="flex items-center gap-2 mb-3">
+                     <button 
+                         onClick={() => setTrendFilter('all')} 
+                         className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer ${trendFilter === 'all' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}
+                     >
+                         Все
+                     </button>
+                     <button 
+                         onClick={() => setTrendFilter('growing')} 
+                         className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'growing' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'}`}
+                     >
+                         <TrendingUp size={14}/> Растущие
+                     </button>
+                     <button 
+                         onClick={() => setTrendFilter('declining')} 
+                         className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'declining' ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-white text-rose-600 border-rose-200 hover:border-rose-300'}`}
+                     >
+                         <TrendingDown size={14}/> Падающие
+                     </button>
+                 </div>
+             )}
              <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mx-1 px-1 touch-pan-x">
                   {PERIODS.map(p => (
                       <button key={p.id} onClick={() => setSelectedPeriod(p.id)} className={`flex-shrink-0 px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer ${selectedPeriod === p.id ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}>{p.label}</button>
@@ -602,13 +731,6 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
           <div className="flex-1 overflow-y-auto custom-scrollbar px-1">
               {displayMode === 'dashboard' && renderDashboardView()}
               {displayMode === 'list' && renderListView()}
-              {displayMode === 'analytics' && (
-                  <AnalyticsDashboard 
-                      definitions={definitions} 
-                      values={allLatestValues} 
-                      selectedPeriod={selectedPeriod} 
-                  />
-              )}
           </div>
 
           {/* STAT MODAL */}

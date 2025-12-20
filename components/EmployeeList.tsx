@@ -351,6 +351,8 @@ const EmployeeList: React.FC<EmployeeListProps> = ({ employees, onEdit, onDelete
                         src={emp.photo_url} 
                         alt={emp.full_name} 
                         className="w-full h-full object-cover" 
+                        loading="lazy"
+                        decoding="async"
                         onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
                       />
                     ) : (

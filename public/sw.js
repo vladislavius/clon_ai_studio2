@@ -3,6 +3,7 @@ const CACHE_NAME = 'hr-system-pro-v1';
 const urlsToCache = [
   '/',
   '/index.html',
+  '/offline.html',
   '/favicon.svg',
 ];
 
@@ -88,8 +89,11 @@ self.addEventListener('fetch', (event) => {
           }
         ).catch((error) => {
           console.error('Fetch failed:', error);
-          // Можно вернуть fallback страницу
-          // return caches.match('/offline.html');
+          // Возвращаем offline страницу для навигационных запросов
+          if (event.request.mode === 'navigate') {
+            return caches.match('/offline.html');
+          }
+          // Для других запросов возвращаем ошибку
           throw error;
         });
       })

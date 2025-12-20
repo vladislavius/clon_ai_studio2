@@ -1,6 +1,6 @@
 
 import { Employee, StatisticDefinition, StatisticValue } from '../types';
-import { format } from 'date-fns';
+import { format, subWeeks, startOfWeek, endOfWeek, eachWeekOfInterval } from 'date-fns';
 import { ORGANIZATION_STRUCTURE } from '../constants';
 
 /**
@@ -339,6 +339,76 @@ export function exportStatisticsToExcel(
   const a = document.createElement('a');
   a.href = url;
   a.download = `statistics_detailed_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Экспорт статистик с недельными данными для заполнения
+ * Создает CSV с колонками для каждой недели последнего месяца
+ */
+export function exportStatisticsWeekly(
+  definitions: StatisticDefinition[],
+  values: Record<string, StatisticValue[]>
+): void {
+  const now = new Date();
+  const fourWeeksAgo = subWeeks(now, 4);
+  const weeks = eachWeekOfInterval(
+    { start: fourWeeksAgo, end: now },
+    { weekStartsOn: 1 } // Понедельник
+  );
+
+  // Заголовки: ID, Название, Владелец, и колонки для каждой недели
+  const weekHeaders = weeks.map(week => format(week, 'dd.MM.yyyy'));
+  const headers = ['ID Статистики', 'Название', 'Владелец', ...weekHeaders];
+
+  const rows = definitions.map(def => {
+    const statValues = values[def.id] || [];
+    const sorted = [...statValues].sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    // Для каждой недели находим значение (ближайшее к началу недели)
+    const weekValues = weeks.map(week => {
+      const weekStart = startOfWeek(week, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(week, { weekStartsOn: 1 });
+      
+      // Ищем значение в пределах недели
+      const weekValue = sorted.find(v => {
+        const vDate = new Date(v.date);
+        return vDate >= weekStart && vDate <= weekEnd;
+      });
+
+      // Если не найдено, берем ближайшее предыдущее значение
+      if (!weekValue) {
+        const beforeWeek = sorted.filter(v => new Date(v.date) < weekStart);
+        if (beforeWeek.length > 0) {
+          return beforeWeek[beforeWeek.length - 1].value;
+        }
+        return '';
+      }
+
+      return weekValue.value;
+    });
+
+    return [
+      def.id,
+      def.title,
+      def.owner_id || '',
+      ...weekValues.map(v => v === '' ? '' : v.toString())
+    ];
+  });
+
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+  ].join('\n');
+
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `statistics_weekly_${format(new Date(), 'yyyy-MM-dd')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

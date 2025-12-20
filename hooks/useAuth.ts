@@ -37,7 +37,7 @@ export function useAuth(): UseAuthReturn {
     isOffline ||
     isAdminFromMetadata ||
     // Fallback для dev/demo (можно удалить в продакшене)
-    (process.env.NODE_ENV === 'development' && session?.user?.email && ADMIN_EMAILS.includes(session.user.email));
+    (import.meta.env.MODE === 'development' && session?.user?.email && ADMIN_EMAILS.includes(session.user.email));
 
   useEffect(() => {
     if (isOffline) {
@@ -51,33 +51,32 @@ export function useAuth(): UseAuthReturn {
     }
 
     let isMounted = true;
+    let subscription: { unsubscribe: () => void } | null = null;
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
-      if (isMounted) {
-        setSession(session);
-        setAuthChecking(false);
-      }
+      if (!isMounted) return; // Проверка перед обновлением состояния
+      setSession(session);
+      setAuthChecking(false);
     }).catch((error: unknown) => {
-      if (isMounted) {
-        console.error('Error getting session:', error);
-        setAuthChecking(false);
-      }
+      if (!isMounted) return;
+      console.error('Error getting session:', error);
+      setAuthChecking(false);
     });
 
     // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
-      if (isMounted) {
-        setSession(session);
-        if (!session) {
-          setIsOffline(false);
-        }
+    const { data: { subscription: sub } } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (!isMounted) return; // Проверка перед обновлением состояния
+      setSession(session);
+      if (!session) {
+        setIsOffline(false);
       }
     });
+    subscription = sub;
 
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [isOffline]);
 

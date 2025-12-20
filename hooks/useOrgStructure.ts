@@ -59,9 +59,77 @@ export function useOrgStructure(): UseOrgStructureReturn {
     if (!isAdmin || isOffline || !supabase) return;
 
     try {
-      // Flatten changes to save to DB (Saving simplified for brevity)
-      // In real production, we'd save each changed node to the 'org_metadata' table
-      // Here we perform a simplified upsert for the modified node if possible
+      // Сохраняем изменения для каждого департамента и поддепартамента
+      const updates: Array<Promise<unknown>> = [];
+
+      // Сохраняем данные компании (owner)
+      if (newStruct['owner']) {
+        const owner = newStruct['owner'];
+        updates.push(
+          supabase.from('org_metadata').upsert({
+            type: 'company',
+            node_id: 'owner',
+            goal: owner.goal || null,
+            vfp: owner.vfp || null,
+            manager: owner.manager || null,
+            content: {
+              goal: owner.goal,
+              vfp: owner.vfp,
+              manager: owner.manager,
+            }
+          }, { onConflict: 'type,node_id' })
+        );
+      }
+
+      // Сохраняем данные департаментов
+      for (const deptId in newStruct) {
+        if (deptId === 'owner') continue;
+        
+        const dept = newStruct[deptId];
+        updates.push(
+          supabase.from('org_metadata').upsert({
+            type: 'department',
+            node_id: deptId,
+            manager: dept.manager || null,
+            content: {
+              name: dept.name,
+              fullName: dept.fullName,
+              description: dept.description,
+              longDescription: dept.longDescription,
+              vfp: dept.vfp,
+              goal: dept.goal,
+              manager: dept.manager,
+              mainStat: dept.mainStat,
+              functions: dept.functions,
+              troubleSigns: dept.troubleSigns,
+              developmentActions: dept.developmentActions,
+            }
+          }, { onConflict: 'type,node_id' })
+        );
+
+        // Сохраняем поддепартаменты
+        if (dept.departments) {
+          for (const subDeptId in dept.departments) {
+            const subDept = dept.departments[subDeptId];
+            updates.push(
+              supabase.from('org_metadata').upsert({
+                type: 'subdepartment',
+                node_id: subDeptId,
+                manager: subDept.manager || null,
+                content: {
+                  name: subDept.name,
+                  code: subDept.code,
+                  description: subDept.description,
+                  vfp: subDept.vfp,
+                  manager: subDept.manager,
+                }
+              }, { onConflict: 'type,node_id' })
+            );
+          }
+        }
+      }
+
+      await Promise.all(updates);
     } catch (err) {
       if (err instanceof Error) {
         console.error("Failed to save org structure", err);

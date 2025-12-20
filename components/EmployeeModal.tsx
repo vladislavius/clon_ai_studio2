@@ -10,6 +10,7 @@ import { validateEmail, validatePhone, validateDate, validateBirthDate, validate
 import { analyzeTrend, getFilteredValues } from '../utils/statistics';
 import { useToast } from './Toast';
 import { useErrorHandler } from '../utils/errorHandler';
+import { useSwipe } from '../hooks/useSwipe';
 
 interface EmployeeModalProps {
   isOpen: boolean;
@@ -539,13 +540,26 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
     }
   };
 
+  // Swipe жесты для закрытия модального окна (только на мобильных)
+  const swipeHandlers = useSwipe({
+    onSwipeDown: () => {
+      if (!isReadOnly && window.innerWidth < 768) {
+        onClose();
+      }
+    },
+    onSwipeDownThreshold: 100, // Минимальное расстояние для закрытия
+  });
+
   if (!isOpen) return null;
 
   const inputClass = `w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm font-medium text-slate-800 placeholder:text-slate-400 hover:border-slate-300 ${isReadOnly ? 'bg-slate-50 text-slate-600 pointer-events-none' : ''}`;
   const labelClass = "block text-xs font-bold text-slate-500 uppercase mb-1.5 ml-1 tracking-wide";
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-0 md:p-4">
+    <div 
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-0 md:p-4"
+      {...swipeHandlers}
+    >
       {/* ... (Modal Header & Tabs - Preserved) ... */}
       <div className="bg-white rounded-none md:rounded-3xl shadow-2xl w-full max-w-6xl h-full md:h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
         <div className="flex justify-between items-center px-4 md:px-8 py-3 md:py-5 border-b border-gray-100 bg-white flex-shrink-0">
@@ -553,6 +567,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
               <h2 className="text-lg md:text-2xl font-bold text-slate-800 truncate leading-tight">{isReadOnly ? 'Сотрудник' : (initialData ? 'Редактирование' : 'Новый')}</h2>
               <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5 md:hidden">
                   <span>{formData.id.substring(0,6)}...</span>
+                  {!isReadOnly && (
+                    <span className="text-[10px] text-slate-400">• Потяните вниз для закрытия</span>
+                  )}
               </div>
               <div className="items-center gap-2 text-sm text-slate-500 mt-0.5 hidden md:flex">
                   <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-mono text-slate-600">{formData.id.substring(0,8)}</span>
@@ -600,7 +617,23 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                 <div className="bg-white p-4 md:p-6 rounded-3xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                                     <div className="md:col-span-2 flex justify-center mb-4">
                                         <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-slate-100 shadow-lg overflow-hidden bg-slate-200 relative group">
-                                            {formData.photo_url ? (<img src={formData.photo_url} alt="Avatar" className="w-full h-full object-cover" onError={(e) => { if (e.currentTarget.src.startsWith('https://ui-avatars.com')) return; e.currentTarget.src = `https://ui-avatars.com/api/?name=${formData.full_name}&background=f1f5f9&color=64748b`; }}/>) : (<div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100"><User size={32}/></div>)}
+                                            {formData.photo_url ? (
+                                                <img 
+                                                    src={formData.photo_url} 
+                                                    alt="Avatar" 
+                                                    className="w-full h-full object-cover" 
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    onError={(e) => { 
+                                                        if (e.currentTarget.src.startsWith('https://ui-avatars.com')) return; 
+                                                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${formData.full_name}&background=f1f5f9&color=64748b`; 
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100">
+                                                    <User size={32}/>
+                                                </div>
+                                            )}
                                             <button type="button" onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"><Upload size={24} /></button>
                                             <input type="file" ref={fileInputRef} onChange={(e) => handleFileUpload(e, true)} className="hidden" accept="image/*" />
                                         </div>

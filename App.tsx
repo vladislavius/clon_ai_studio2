@@ -8,12 +8,14 @@ import StatisticsTab from './components/StatisticsTab';
 import OrgChart from './components/OrgChart';
 import Auth from './components/Auth';
 import ConfirmationModal from './components/ConfirmationModal';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS, DEPT_SORT_ORDER } from './constants';
 import { Employee, ViewMode, Department } from './types';
 import { useAuth } from './hooks/useAuth';
 import { useEmployees } from './hooks/useEmployees';
 import { useOrgStructure } from './hooks/useOrgStructure';
 import { useEmployeeFilters } from './hooks/useEmployeeFilters';
+import { usePullToRefresh } from './hooks/usePullToRefresh';
 
 const DEMO_EMPLOYEES: Employee[] = [
   {
@@ -105,6 +107,21 @@ function App() {
 
   // Employee filters hook (уже мемоизирован внутри)
   const { filteredEmployees } = useEmployeeFilters({ employees, searchTerm, deptFilter });
+
+  // Pull-to-refresh для мобильных
+  const handleRefresh = useCallback(async () => {
+    if (session && !isOffline) {
+      await Promise.all([
+        fetchEmployees(),
+        fetchOrgMetadata(isOffline),
+      ]);
+    }
+  }, [session, isOffline, fetchEmployees, fetchOrgMetadata]);
+
+  const { isRefreshing, pullDistance, pullProgress } = usePullToRefresh({
+    onRefresh: handleRefresh,
+    enabled: session !== null && !isOffline && window.innerWidth < 768,
+  });
 
   // Мемоизация вычисляемых значений
   const sidebarWidth = useMemo(() => isSidebarCollapsed ? 'w-20' : 'w-72', [isSidebarCollapsed]);
@@ -288,8 +305,25 @@ function App() {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out h-full overflow-hidden">
-        <header className="bg-white/80 backdrop-blur-md fixed md:sticky top-0 left-0 right-0 z-20 border-b border-gray-200 px-4 md:px-8 py-4 flex justify-between items-center print:hidden h-[73px] w-full transition-all duration-300">
+      <main className="flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out h-full overflow-hidden pb-20 md:pb-0 relative">
+        {/* Pull-to-refresh индикатор */}
+        {isRefreshing && (
+          <div className="fixed top-0 left-0 right-0 z-30 flex justify-center items-center py-3 bg-blue-50 border-b border-blue-200 safe-area-top">
+            <Loader2 className="animate-spin text-blue-600" size={20} />
+            <span className="ml-2 text-xs font-medium text-blue-600">Обновление...</span>
+          </div>
+        )}
+        {pullDistance > 0 && !isRefreshing && (
+          <div 
+            className="fixed top-0 left-0 right-0 z-30 flex justify-center items-center py-3 bg-blue-50/50 border-b border-blue-200/50 safe-area-top transition-opacity"
+            style={{ opacity: Math.min(pullProgress, 1) }}
+          >
+            <div className="text-xs font-medium text-blue-600">
+              {pullProgress >= 1 ? 'Отпустите для обновления' : 'Потяните для обновления'}
+            </div>
+          </div>
+        )}
+        <header className={`bg-white/80 backdrop-blur-md fixed md:sticky top-0 left-0 right-0 z-20 border-b border-gray-200 px-4 md:px-8 py-4 flex justify-between items-center print:hidden h-[73px] w-full transition-all duration-300 safe-area-top ${isRefreshing ? 'mt-[48px]' : ''}`}>
           <div className="flex items-center gap-4 flex-1">
             <button onClick={handleToggleMobileMenu} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100"><Menu size={24} /></button>
             {currentView !== 'settings' && (
@@ -389,6 +423,12 @@ function App() {
           )}
         </div>
       </main>
+
+      <MobileBottomNav
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        isAdmin={isAdmin}
+      />
 
       <EmployeeModal 
         isOpen={isModalOpen}

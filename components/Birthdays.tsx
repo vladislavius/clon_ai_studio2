@@ -146,6 +146,9 @@ const Birthdays: React.FC<BirthdaysProps> = ({ employees }) => {
                             <img 
                                 src={emp.photo_url} 
                                 className="w-full h-full object-cover" 
+                                loading="lazy"
+                                decoding="async"
+                                alt={emp.full_name}
                                 onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
                             />
                         ) : (
@@ -204,6 +207,9 @@ const Birthdays: React.FC<BirthdaysProps> = ({ employees }) => {
                                 <img 
                                     src={emp.photo_url} 
                                     className="w-full h-full object-cover" 
+                                    loading="lazy"
+                                    decoding="async"
+                                    alt={emp.full_name}
                                     onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=random`)}
                                 />
                               ) : (

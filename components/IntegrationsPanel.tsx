@@ -21,6 +21,7 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ employees, isAdmi
   const [slackWebhook, setSlackWebhook] = useState(secureStorage.getItem('slack_webhook') || '');
   const [telegramBotToken, setTelegramBotToken] = useState(secureStorage.getItem('telegram_bot_token') || '');
   const [telegramChatId, setTelegramChatId] = useState(secureStorage.getItem('telegram_chat_id') || '');
+  const [telegramStatus, setTelegramStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
 
   const saveSlackConfig = () => {
     secureStorage.setItem('slack_webhook', slackWebhook);
@@ -31,7 +32,52 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ employees, isAdmi
     secureStorage.setItem('telegram_bot_token', telegramBotToken);
     secureStorage.setItem('telegram_chat_id', telegramChatId);
     toast.success('Настройки Telegram сохранены');
+    setTelegramStatus('idle');
   };
+
+  const checkTelegramConnection = useCallback(async () => {
+    if (!telegramBotToken || !telegramChatId) {
+      setTelegramStatus('invalid');
+      toast.error('Заполните токен бота и Chat ID');
+      return;
+    }
+
+    setTelegramStatus('checking');
+    try {
+      // Проверяем доступность бота через getMe
+      const getMeUrl = `https://api.telegram.org/bot${telegramBotToken}/getMe`;
+      const getMeResponse = await fetch(getMeUrl);
+      
+      if (!getMeResponse.ok) {
+        setTelegramStatus('invalid');
+        toast.error('Неверный токен бота');
+        return;
+      }
+
+      // Проверяем доступность чата через sendMessage с пустым сообщением (не отправляем)
+      // Вместо этого просто проверяем формат токена и ID
+      const tokenPattern = /^\d+:[A-Za-z0-9_-]+$/;
+      const chatIdPattern = /^-?\d+$/;
+      
+      if (!tokenPattern.test(telegramBotToken)) {
+        setTelegramStatus('invalid');
+        toast.error('Неверный формат токена бота');
+        return;
+      }
+
+      if (!chatIdPattern.test(telegramChatId)) {
+        setTelegramStatus('invalid');
+        toast.error('Неверный формат Chat ID');
+        return;
+      }
+
+      setTelegramStatus('valid');
+      toast.success('Подключение к Telegram успешно проверено');
+    } catch (error) {
+      setTelegramStatus('invalid');
+      toast.error('Ошибка проверки подключения к Telegram');
+    }
+  }, [telegramBotToken, telegramChatId, toast]);
 
   const handleAddBirthdayToCalendar = (employee: Employee, calendarType: 'google' | 'outlook') => {
     try {
@@ -235,12 +281,36 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ employees, isAdmi
               ID чата или канала для отправки уведомлений
             </p>
           </div>
+          <div className="flex items-center gap-2">
+            {telegramStatus === 'checking' && (
+              <div className="text-xs text-blue-600 font-medium flex items-center gap-1">
+                <Clock size={12} className="animate-spin" /> Проверка...
+              </div>
+            )}
+            {telegramStatus === 'valid' && (
+              <div className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                <CheckCircle2 size={12} /> Подключение активно
+              </div>
+            )}
+            {telegramStatus === 'invalid' && (
+              <div className="text-xs text-red-600 font-medium flex items-center gap-1">
+                <X size={12} /> Ошибка подключения
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <button
               onClick={saveTelegramConfig}
               className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl text-sm hover:bg-blue-700 transition-colors"
             >
               Сохранить
+            </button>
+            <button
+              onClick={checkTelegramConnection}
+              disabled={!telegramBotToken || !telegramChatId || telegramStatus === 'checking'}
+              className="px-4 py-2 bg-white border border-blue-200 text-blue-600 font-bold rounded-xl text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Проверить подключение
             </button>
             <button
               onClick={handleSendTelegramNotification}

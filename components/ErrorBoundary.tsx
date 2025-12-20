@@ -47,11 +47,11 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             </div>
             <h1 className="text-xl font-bold text-center text-slate-800 mb-2">Произошла ошибка</h1>
             <p className="text-sm text-slate-500 text-center mb-6">
-              Система столкнулась with an unexpected error.
+              Система столкнулась с неожиданной ошибкой.
             </p>
             <div className="bg-slate-100 p-3 rounded-lg text-xs font-mono text-slate-600 mb-6 overflow-auto max-h-32 border border-slate-200">
                 {/* Accessing error details from state for display in the UI */}
-                {this.state.error?.message || 'Unknown Error'}
+                {this.state.error?.message || 'Неизвестная ошибка'}
             </div>
             <button
               onClick={() => window.location.reload()}

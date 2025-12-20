@@ -2,7 +2,9 @@ import React, { useState, useCallback } from 'react'; // Добавлен useCal
 import ImportExport from './ImportExport';
 import IntegrationsPanel from './IntegrationsPanel';
 import { Employee } from '../types';
-import { Database, Settings as SettingsIcon, Globe, Save, Plug } from 'lucide-react';
+import { Database, Settings as SettingsIcon, Globe, Save, Plug, Download, X, Bell, BellOff } from 'lucide-react';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import { useToast } from './Toast';
 
 interface SettingsProps {
     employees: Employee[];
@@ -11,10 +13,40 @@ interface SettingsProps {
 
 const Settings: React.FC<SettingsProps> = ({ employees, onImport }) => {
     const [activeTab, setActiveTab] = useState<'general' | 'database' | 'integrations'>('general');
+    const toast = useToast();
+    const { showPrompt, isInstalled, handleInstall, dismissPrompt } = useInstallPrompt();
+    const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+        'Notification' in window ? Notification.permission : 'denied'
+    );
     
     // Mock settings state
     const [companyName, setCompanyName] = useState('Остров Сокровищ');
     const [currency, setCurrency] = useState('THB');
+
+    const handleRequestNotificationPermission = async () => {
+        if (!('Notification' in window)) {
+            toast.error('Ваш браузер не поддерживает уведомления');
+            return;
+        }
+
+        const permission = await Notification.requestPermission();
+        setNotificationPermission(permission);
+        
+        if (permission === 'granted') {
+            toast.success('Уведомления включены');
+        } else {
+            toast.warning('Разрешение на уведомления отклонено');
+        }
+    };
+
+    const handleInstallClick = async () => {
+        const installed = await handleInstall();
+        if (installed) {
+            toast.success('Приложение установлено!');
+        } else {
+            toast.error('Не удалось установить приложение');
+        }
+    };
 
     return (
         <div className="flex flex-col h-full animate-in fade-in space-y-4">
@@ -96,6 +128,67 @@ const Settings: React.FC<SettingsProps> = ({ employees, onImport }) => {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* PWA Install Prompt */}
+                            {showPrompt && !isInstalled && (
+                                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 animate-in fade-in slide-in-from-top-2">
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <Download className="text-blue-600" size={20} />
+                                            <h3 className="font-bold text-slate-800 text-sm">Установить приложение</h3>
+                                        </div>
+                                        <button 
+                                            onClick={dismissPrompt}
+                                            className="text-slate-400 hover:text-slate-600 transition-colors"
+                                        >
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-slate-600 mb-4">
+                                        Установите HR System Pro на ваше устройство для быстрого доступа и работы в офлайн режиме.
+                                    </p>
+                                    <button
+                                        onClick={handleInstallClick}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all text-sm"
+                                    >
+                                        <Download size={16} />
+                                        Установить приложение
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Push Notifications */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        {notificationPermission === 'granted' ? (
+                                            <Bell className="text-emerald-600" size={20} />
+                                        ) : (
+                                            <BellOff className="text-slate-400" size={20} />
+                                        )}
+                                        <h3 className="font-bold text-slate-800 text-sm">Push-уведомления</h3>
+                                    </div>
+                                    <span className={`text-xs font-bold px-2 py-1 rounded ${
+                                        notificationPermission === 'granted' 
+                                            ? 'bg-emerald-100 text-emerald-700' 
+                                            : 'bg-slate-200 text-slate-600'
+                                    }`}>
+                                        {notificationPermission === 'granted' ? 'Включено' : 'Выключено'}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-600 mb-4">
+                                    Получайте уведомления о днях рождения, важных событиях и обновлениях.
+                                </p>
+                                {notificationPermission !== 'granted' && (
+                                    <button
+                                        onClick={handleRequestNotificationPermission}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white font-bold rounded-lg hover:bg-slate-900 transition-all text-sm"
+                                    >
+                                        <Bell size={16} />
+                                        Включить уведомления
+                                    </button>
+                                )}
                             </div>
 
                             <div className="pt-6 border-t border-slate-100 flex justify-end">

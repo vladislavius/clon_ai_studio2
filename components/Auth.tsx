@@ -39,15 +39,16 @@ export default function Auth({ onBypass }: AuthProps) {
         if (error) throw error;
         setMessage({ type: 'success', text: 'Ссылка для сброса пароля отправлена на ваш Email.' });
       }
-    } catch (error: any) {
-      const isNetworkError = error.message === 'Failed to fetch' || error.message.includes('SSL');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
+      const isNetworkError = errorMessage === 'Failed to fetch' || errorMessage.includes('SSL');
       
       if (isNetworkError) {
            setMessage({ type: 'error', text: 'Нет соединения с сервером.' });
-      } else if (error.message.includes('Invalid login credentials')) {
+      } else if (errorMessage.includes('Invalid login credentials')) {
            setMessage({ type: 'error', text: 'Неверный Email или пароль.' });
       } else {
-           setMessage({ type: 'error', text: error.message || 'Ошибка входа' });
+           setMessage({ type: 'error', text: errorMessage || 'Ошибка входа' });
       }
     } finally {
       setLoading(false);
