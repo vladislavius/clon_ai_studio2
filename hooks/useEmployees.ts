@@ -244,8 +244,97 @@ export function useEmployees(): UseEmployeesReturn {
         }
       }
       if (isMountedRef.current) {
+        // Проверяем, был ли это новый сотрудник (проверяем до сохранения)
+        const wasNewEmployee = !emp.id || !employees.find(e => e.id === emp.id);
+        
         await fetchEmployees();
         toast.success('Сотрудник успешно сохранен');
+        
+        // Автоматическое создание онбординга для нового сотрудника
+        if (wasNewEmployee && emp.position && emp.id) {
+          try {
+            // Проверяем, нет ли уже онбординга для этого сотрудника
+            const { data: existingInstances } = await supabase
+              .from('onboarding_instances')
+              .select('id')
+              .eq('employee_id', emp.id)
+              .limit(1);
+            
+            if (existingInstances && existingInstances.length > 0) {
+              // Онбординг уже существует, пропускаем
+              return;
+            }
+            
+            // Ищем подходящий шаблон по должности или департаменту
+            const positionFilter = emp.position ? `position.ilike.%${emp.position}%` : '';
+            const deptFilter = emp.department && emp.department.length > 0 
+              ? `department_id.eq.${emp.department[0]}` 
+              : '';
+            
+            const filterParts = [positionFilter, deptFilter].filter(Boolean);
+            const filter = filterParts.length > 0 ? filterParts.join(',') : 'id.is.null';
+            
+            const { data: templates } = await supabase
+              .from('onboarding_templates')
+              .select('*')
+              .or(filter)
+              .limit(1);
+            
+            if (templates && templates.length > 0) {
+              const template = templates[0];
+              const startDate = emp.join_date || new Date().toISOString().split('T')[0];
+              
+              // Создаем экземпляр онбординга
+              const { data: instance, error: instanceError } = await supabase
+                .from('onboarding_instances')
+                .insert({
+                  employee_id: emp.id,
+                  template_id: template.id,
+                  start_date: startDate,
+                  status: 'in_progress',
+                  progress_percentage: 0,
+                })
+                .select()
+                .single();
+              
+              if (instanceError) {
+                debugWarn('Ошибка создания экземпляра онбординга:', instanceError);
+                return;
+              }
+              
+              if (instance && template.tasks && Array.isArray(template.tasks) && template.tasks.length > 0) {
+                const tasks = (template.tasks as any[]).map((taskTemplate: any, index: number) => {
+                  const startDateObj = new Date(startDate);
+                  const dueDate = taskTemplate.due_days
+                    ? new Date(startDateObj.getTime() + taskTemplate.due_days * 24 * 60 * 60 * 1000)
+                    : null;
+                  
+                  return {
+                    instance_id: instance.id,
+                    title: taskTemplate.title,
+                    description: taskTemplate.description || null,
+                    category: taskTemplate.category,
+                    assigned_to: taskTemplate.assigned_to,
+                    due_date: dueDate?.toISOString().split('T')[0] || null,
+                    order_index: taskTemplate.order_index ?? index,
+                    completed: false,
+                    attachments: [],
+                  };
+                });
+                
+                if (tasks.length > 0) {
+                  const { error: tasksError } = await supabase.from('onboarding_tasks').insert(tasks);
+                  if (tasksError) {
+                    debugWarn('Ошибка создания задач онбординга:', tasksError);
+                  }
+                }
+              }
+            }
+          } catch (onboardingError) {
+            // Не критично, просто логируем
+            debugWarn('Не удалось создать онбординг автоматически:', onboardingError);
+          }
+        }
       }
     } catch (error: unknown) {
       if (error instanceof Error) {

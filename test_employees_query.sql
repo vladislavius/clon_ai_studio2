@@ -38,3 +38,4 @@ SELECT
   auth.jwt() -> 'app_metadata' ->> 'role' as user_role,
   auth.jwt() -> 'user_metadata' ->> 'is_admin' as is_admin_flag;
 
+

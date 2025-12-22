@@ -90,15 +90,52 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
     try {
       if (isOffline) {
         if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS);
-      } else if (supabase) {
-        const { data, error } = await supabase.from('statistics_definitions').select('*').order('title');
-        if (error) {
-          handleError(error, 'Ошибка загрузки определений статистик');
+        return;
+      }
+      
+      if (!supabase) {
+        console.warn('Supabase не инициализирован, используем демо-данные');
+        if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('statistics_definitions')
+        .select('*')
+        .order('title');
+        
+      if (error) {
+        // Если ошибка 401 (Unauthorized) - проблема с аутентификацией
+        if (error.code === 'PGRST301' || error.message?.includes('JWT') || error.message?.includes('401')) {
+          console.warn('Ошибка аутентификации при загрузке статистик, используем демо-данные');
+          if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS);
           return;
         }
-        if (data) setDefinitions(data);
+        
+        // Если таблица не существует
+        if (error.code === '42P01' || error.code === 'PGRST116' || error.message?.includes('does not exist')) {
+          console.warn('Таблица statistics_definitions не существует, используем демо-данные');
+          if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS);
+          return;
+        }
+        
+        handleError(error, 'Ошибка загрузки определений статистик');
+        return;
       }
-    } catch (error) {
+      
+      if (data) {
+        setDefinitions(data);
+      } else {
+        // Если данных нет, используем демо-данные
+        if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS);
+      }
+    } catch (error: any) {
+      // Обработка сетевых ошибок (Failed to fetch)
+      if (error?.message?.includes('Failed to fetch') || error?.name === 'TypeError') {
+        console.warn('Сетевая ошибка при загрузке статистик, используем демо-данные');
+        if (definitions.length === 0) setDefinitions(DEMO_DEFINITIONS);
+        return;
+      }
       handleError(error, 'Ошибка при получении статистик');
     }
   };
@@ -115,32 +152,91 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
         }
         return;
       }
-      if (supabase) {
-        // Optimized select to reduce payload - используем индексы для ускорения
-        // Загружаем с лимитом и сортировкой на стороне БД для оптимизации
-        const { data, error } = await supabase
-          .from('statistics_values')
-          .select('id, definition_id, date, value, value2')
-          .order('date', { ascending: true }); // Сортировка на стороне БД
-        
-        if (error) {
-          handleError(error, 'Ошибка загрузки значений статистик');
+      
+      if (!supabase) {
+        console.warn('Supabase не инициализирован, используем демо-данные');
+        if (Object.keys(allLatestValues).length === 0) {
+          const sortedDemo: Record<string, StatisticValue[]> = {};
+          for (const k in DEMO_VALUES) {
+            sortedDemo[k] = [...DEMO_VALUES[k]].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          }
+          setAllLatestValues(sortedDemo);
+        }
+        return;
+      }
+
+      // Optimized select to reduce payload - используем индексы для ускорения
+      // Загружаем с лимитом и сортировкой на стороне БД для оптимизации
+      const { data, error } = await supabase
+        .from('statistics_values')
+        .select('id, definition_id, date, value, value2')
+        .order('date', { ascending: true }); // Сортировка на стороне БД
+      
+      if (error) {
+        // Если ошибка 401 (Unauthorized) - проблема с аутентификацией
+        if (error.code === 'PGRST301' || error.message?.includes('JWT') || error.message?.includes('401')) {
+          console.warn('Ошибка аутентификации при загрузке значений статистик, используем демо-данные');
+          if (Object.keys(allLatestValues).length === 0) {
+            const sortedDemo: Record<string, StatisticValue[]> = {};
+            for (const k in DEMO_VALUES) {
+              sortedDemo[k] = [...DEMO_VALUES[k]].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            }
+            setAllLatestValues(sortedDemo);
+          }
           return;
         }
-        if (data) {
-          const grouped: Record<string, StatisticValue[]> = {};
-          data.forEach((v: StatisticValue) => {
-            if (!grouped[v.definition_id]) grouped[v.definition_id] = [];
-            grouped[v.definition_id].push(v);
-          });
-          // Данные уже отсортированы БД, но пересортируем для надежности
-          for (const k in grouped) {
-            grouped[k].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        // Если таблица не существует
+        if (error.code === '42P01' || error.code === 'PGRST116' || error.message?.includes('does not exist')) {
+          console.warn('Таблица statistics_values не существует, используем демо-данные');
+          if (Object.keys(allLatestValues).length === 0) {
+            const sortedDemo: Record<string, StatisticValue[]> = {};
+            for (const k in DEMO_VALUES) {
+              sortedDemo[k] = [...DEMO_VALUES[k]].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            }
+            setAllLatestValues(sortedDemo);
           }
-          setAllLatestValues(grouped);
+          return;
+        }
+        
+        handleError(error, 'Ошибка загрузки значений статистик');
+        return;
+      }
+      
+      if (data) {
+        const grouped: Record<string, StatisticValue[]> = {};
+        data.forEach((v: StatisticValue) => {
+          if (!grouped[v.definition_id]) grouped[v.definition_id] = [];
+          grouped[v.definition_id].push(v);
+        });
+        // Данные уже отсортированы БД, но пересортируем для надежности
+        for (const k in grouped) {
+          grouped[k].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        }
+        setAllLatestValues(grouped);
+      } else {
+        // Если данных нет, используем демо-данные
+        if (Object.keys(allLatestValues).length === 0) {
+          const sortedDemo: Record<string, StatisticValue[]> = {};
+          for (const k in DEMO_VALUES) {
+            sortedDemo[k] = [...DEMO_VALUES[k]].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          }
+          setAllLatestValues(sortedDemo);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Обработка сетевых ошибок (Failed to fetch)
+      if (error?.message?.includes('Failed to fetch') || error?.name === 'TypeError') {
+        console.warn('Сетевая ошибка при загрузке значений статистик, используем демо-данные');
+        if (Object.keys(allLatestValues).length === 0) {
+          const sortedDemo: Record<string, StatisticValue[]> = {};
+          for (const k in DEMO_VALUES) {
+            sortedDemo[k] = [...DEMO_VALUES[k]].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          }
+          setAllLatestValues(sortedDemo);
+        }
+        return;
+      }
       handleError(error, 'Ошибка при получении значений статистик');
     }
   };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Network, Users, TrendingUp, Settings } from 'lucide-react';
+import { Network, Users, TrendingUp, Settings, UserCheck, FileText, Upload } from 'lucide-react';
 import { ViewMode } from '../types';
 
 interface MobileBottomNavProps {
@@ -71,12 +71,32 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           onClick={() => onViewChange('org_chart')}
         />
         {isAdmin && (
-          <NavButton
-            icon={<Users size={20} />}
-            label="Сотрудники"
-            active={currentView === 'employees'}
-            onClick={() => onViewChange('employees')}
-          />
+          <>
+            <NavButton
+              icon={<Users size={20} />}
+              label="Сотрудники"
+              active={currentView === 'employees'}
+              onClick={() => onViewChange('employees')}
+            />
+            <NavButton
+              icon={<UserCheck size={20} />}
+              label="Онбординг"
+              active={currentView === 'onboarding'}
+              onClick={() => onViewChange('onboarding')}
+            />
+            <NavButton
+              icon={<FileText size={20} />}
+              label="Документы"
+              active={currentView === 'documents'}
+              onClick={() => onViewChange('documents')}
+            />
+            <NavButton
+              icon={<Upload size={20} />}
+              label="Полученные"
+              active={currentView === 'received_documents'}
+              onClick={() => onViewChange('received_documents')}
+            />
+          </>
         )}
         <NavButton
           icon={<TrendingUp size={20} />}
