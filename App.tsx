@@ -14,7 +14,7 @@ import { OnboardingDashboard } from './components/OnboardingDashboard';
 import { DocumentsDashboard } from './components/DocumentsDashboard';
 import { ReceivedDocumentsDashboard } from './components/ReceivedDocumentsDashboard';
 import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS, DEPT_SORT_ORDER } from './constants';
-import { Employee, ViewMode, Department } from './types';
+import { Employee, ViewMode, Department, EmployeeSubView, DocumentsSubView } from './types';
 import { useAuth } from './hooks/useAuth';
 import { useEmployees } from './hooks/useEmployees';
 import { useOrgStructure } from './hooks/useOrgStructure';
@@ -83,7 +83,8 @@ function App() {
 
   // UI state
   const [currentView, setCurrentView] = useState<ViewMode>('org_chart');
-  const [employeeSubView, setEmployeeSubView] = useState<'list' | 'birthdays'>('list');
+  const [employeeSubView, setEmployeeSubView] = useState<EmployeeSubView>('list');
+  const [documentsSubView, setDocumentsSubView] = useState<DocumentsSubView>('sent');
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
@@ -220,7 +221,19 @@ function App() {
   const handleViewChange = useCallback((view: ViewMode) => {
     setCurrentView(view);
     setIsMobileMenuOpen(false);
-  }, []);
+    // При переключении на сотрудников, если была выбрана подвкладка документов, сбрасываем подвкладку документов
+    if (view !== 'employees' && employeeSubView === 'documents') {
+      setEmployeeSubView('list');
+    }
+  }, [employeeSubView]);
+  
+  const handleEmployeeSubViewChange = useCallback((subView: EmployeeSubView) => {
+    setEmployeeSubView(subView);
+    // При переключении на документы, устанавливаем подвкладку "Отправленные" по умолчанию
+    if (subView === 'documents' && documentsSubView !== 'sent' && documentsSubView !== 'received') {
+      setDocumentsSubView('sent');
+    }
+  }, [documentsSubView]);
 
   const handleStatisticsView = useCallback((deptId: string | null = null) => {
     setSelectedDept(deptId);
@@ -267,8 +280,8 @@ function App() {
                 {isOffline ? <WifiOff size={20} /> : <Users size={24} />}
               </div>
               <div className={`transition-opacity duration-200 ${isSidebarCollapsed ? 'opacity-0 w-0 hidden md:block' : 'opacity-100'}`}>
-                <h1 className="font-bold text-lg text-slate-800 whitespace-nowrap">HR System</h1>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ml-1 ${isAdmin ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                <h1 className="font-bold text-lg md:text-xl text-slate-800 whitespace-nowrap">HR System</h1>
+                <span className={`text-xs md:text-sm font-bold px-2 py-0.5 rounded ml-1 ${isAdmin ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
                   {isAdmin ? 'ADMIN' : 'USER'}
                 </span>
               </div>
@@ -279,46 +292,32 @@ function App() {
             </button>
           </div>
 
-          <nav className="p-3 space-y-1 flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
+          <nav className="p-3 md:p-4 space-y-1 flex-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
             <div className="mb-4 md:mb-6">
-              {!isSidebarCollapsed && <p className="px-3 md:px-4 text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 md:mb-2 animate-in fade-in">Основное</p>}
-              <button onClick={() => handleViewChange('org_chart')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'org_chart' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                <div className="flex-shrink-0"><Network size={16} className="md:w-5 md:h-5" /></div>
+              {!isSidebarCollapsed && <p className="px-3 md:px-4 text-xs md:text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 md:mb-3 animate-in fade-in">Основное</p>}
+              <button onClick={() => handleViewChange('org_chart')} className={`w-full flex items-center gap-2.5 md:gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-sm md:text-base ${currentView === 'org_chart' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                <div className="flex-shrink-0"><Network size={18} className="md:w-5 md:h-5" /></div>
                 {!isSidebarCollapsed && <span className="whitespace-nowrap">Оргсхема</span>}
               </button>
               {isAdmin && (
-                <>
-                  <button onClick={() => handleViewChange('employees')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'employees' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    <div className="flex-shrink-0"><LayoutGrid size={16} className="md:w-5 md:h-5" /></div>
-                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Сотрудники</span>}
-                  </button>
-                  <button onClick={() => handleViewChange('onboarding')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'onboarding' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    <div className="flex-shrink-0"><UserCheck size={16} className="md:w-5 md:h-5" /></div>
-                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Онбординг</span>}
-                  </button>
-                  <button onClick={() => handleViewChange('documents')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'documents' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    <div className="flex-shrink-0"><FileText size={16} className="md:w-5 md:h-5" /></div>
-                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Документы</span>}
-                  </button>
-                  <button onClick={() => handleViewChange('received_documents')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'received_documents' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                    <div className="flex-shrink-0"><Upload size={16} className="md:w-5 md:h-5" /></div>
-                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Полученные</span>}
-                  </button>
-                </>
+                <button onClick={() => handleViewChange('employees')} className={`w-full flex items-center gap-2.5 md:gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-sm md:text-base ${currentView === 'employees' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                  <div className="flex-shrink-0"><LayoutGrid size={18} className="md:w-5 md:h-5" /></div>
+                  {!isSidebarCollapsed && <span className="whitespace-nowrap">Сотрудники</span>}
+                </button>
               )}
             </div>
 
             <div>
-              {!isSidebarCollapsed && <p className="px-3 md:px-4 text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 md:mb-2 animate-in fade-in">Статистики</p>}
-              <button onClick={() => handleStatisticsView(null)} className={`w-full flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1.5 md:py-2 rounded-lg text-[10px] md:text-xs transition-all mb-1 ${currentView === 'statistics' && !selectedDept ? 'bg-slate-800 text-white font-semibold shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
-                <div className="flex-shrink-0"><TrendingUp size={14} className="md:w-4 md:h-4" /></div>
+              {!isSidebarCollapsed && <p className="px-3 md:px-4 text-xs md:text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 md:mb-3 animate-in fade-in">Статистики</p>}
+              <button onClick={() => handleStatisticsView(null)} className={`w-full flex items-center gap-2 md:gap-2.5 px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-sm md:text-base transition-all mb-1 ${currentView === 'statistics' && !selectedDept ? 'bg-slate-800 text-white font-semibold shadow-md' : 'text-slate-600 hover:bg-slate-50 font-medium'}`}>
+                <div className="flex-shrink-0"><TrendingUp size={18} className="md:w-5 md:h-5" /></div>
                 {!isSidebarCollapsed && <span className="whitespace-nowrap">Дашборд</span>}
               </button>
               <div className="mt-2 space-y-0.5 md:space-y-1">
                 {departmentList.map(dept => (
-                  <button key={dept.id} onClick={() => handleStatisticsView(dept.id)} className={`w-full flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-lg transition-all group ${currentView === 'statistics' && selectedDept === dept.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 font-medium'}`}>
-                    <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full flex-shrink-0 ring-1 md:ring-2 ring-white shadow-sm" style={{ backgroundColor: dept.color }} />
-                    {!isSidebarCollapsed && <span className="truncate text-[9px] md:text-[10px] leading-tight">{dept.name}</span>}
+                  <button key={dept.id} onClick={() => handleStatisticsView(dept.id)} className={`w-full flex items-center gap-2 md:gap-2.5 px-3 md:px-4 py-1.5 md:py-2 rounded-lg transition-all group ${currentView === 'statistics' && selectedDept === dept.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 font-medium'}`}>
+                    <div className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full flex-shrink-0 ring-1 md:ring-2 ring-white shadow-sm" style={{ backgroundColor: dept.color }} />
+                    {!isSidebarCollapsed && <span className="truncate text-xs md:text-sm leading-tight">{dept.name}</span>}
                   </button>
                 ))}
               </div>
@@ -326,9 +325,9 @@ function App() {
 
             {isAdmin && (
               <div className="mt-4 md:mt-6 border-t border-slate-100 pt-3 md:pt-4">
-                {!isSidebarCollapsed && <p className="px-3 md:px-4 text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5 md:mb-2 animate-in fade-in">Конфигурация</p>}
-                <button onClick={() => handleViewChange('settings')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'settings' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
-                  <div className="flex-shrink-0"><SettingsIcon size={16} className="md:w-5 md:h-5" /></div>
+                {!isSidebarCollapsed && <p className="px-3 md:px-4 text-xs md:text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 md:mb-3 animate-in fade-in">Конфигурация</p>}
+                <button onClick={() => handleViewChange('settings')} className={`w-full flex items-center gap-2.5 md:gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-sm md:text-base ${currentView === 'settings' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>
+                  <div className="flex-shrink-0"><SettingsIcon size={18} className="md:w-5 md:h-5" /></div>
                   {!isSidebarCollapsed && <span className="whitespace-nowrap">Настройки</span>}
                 </button>
               </div>
@@ -338,12 +337,12 @@ function App() {
           <div className="p-3 md:p-4 border-t border-gray-100 space-y-3 md:space-y-4">
             {!isSidebarCollapsed && isAdmin && (
               <div className="bg-slate-50 rounded-lg md:rounded-xl p-3 md:p-4 text-center animate-in fade-in">
-                <p className="text-[10px] md:text-xs text-slate-500 mb-0.5 md:mb-1">Сотрудников</p>
-                <p className="text-xl md:text-2xl font-bold text-slate-800">{isLoading ? '...' : employees.length}</p>
+                <p className="text-xs md:text-sm text-slate-500 mb-1 md:mb-1.5 font-medium">Сотрудников</p>
+                <p className="text-2xl md:text-3xl font-bold text-slate-800">{isLoading ? '...' : employees.length}</p>
               </div>
             )}
-            <button onClick={() => handleLogout()} className={`w-full flex items-center justify-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 md:py-2.5 rounded-lg md:rounded-xl border border-red-200 text-red-600 hover:bg-red-50 font-medium transition-colors text-xs md:text-sm ${isSidebarCollapsed ? 'px-0' : ''}`} title="Выход">
-              <LogOut size={16} className="md:w-[18px] md:h-[18px]" />
+            <button onClick={() => handleLogout()} className={`w-full flex items-center justify-center gap-2 md:gap-2.5 px-3 md:px-4 py-2.5 md:py-3 rounded-lg md:rounded-xl border border-red-200 text-red-600 hover:bg-red-50 font-medium transition-colors text-sm md:text-base ${isSidebarCollapsed ? 'px-0' : ''}`} title="Выход">
+              <LogOut size={18} className="md:w-5 md:h-5" />
               {!isSidebarCollapsed && <span>Выход</span>}
             </button>
           </div>
@@ -428,48 +427,37 @@ function App() {
               <StatisticsTab employees={employees} isOffline={isOffline} selectedDeptId={selectedDept} isAdmin={isAdmin} />
             </div>
 
-            {currentView === 'onboarding' && isAdmin && (
-              <div className="h-full flex flex-col relative overflow-y-auto">
-                <OnboardingDashboard employees={employees} isAdmin={isAdmin} />
-              </div>
-            )}
-
-            {currentView === 'documents' && isAdmin && (
-              <div className="h-full flex flex-col relative overflow-y-auto">
-                <DocumentsDashboard employees={employees} isAdmin={isAdmin} />
-              </div>
-            )}
-
-            {currentView === 'received_documents' && isAdmin && (
-              <div className="h-full flex flex-col relative overflow-y-auto">
-                <ReceivedDocumentsDashboard employees={employees} isAdmin={isAdmin} />
-              </div>
-            )}
 
             <div className={currentView === 'employees' && isAdmin ? 'flex flex-col h-full space-y-4' : 'hidden'}>
-              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
+              <div className="bg-white p-4 md:p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex bg-slate-100 p-1 rounded-lg self-start sm:self-auto">
-                    <button onClick={() => setEmployeeSubView('list')} className={`px-4 py-2 text-xs font-bold rounded-md transition-all flex items-center gap-2 ${employeeSubView === 'list' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
-                      <List size={14} /> Справочник
+                  <div className="flex bg-slate-100 p-1.5 rounded-lg self-start sm:self-auto flex-wrap gap-1.5">
+                    <button onClick={() => setEmployeeSubView('list')} className={`px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold rounded-lg transition-all flex items-center gap-2 ${employeeSubView === 'list' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <List size={18} className="md:w-5 md:h-5" /> Справочник
                     </button>
-                    <button onClick={() => setEmployeeSubView('birthdays')} className={`px-4 py-2 text-xs font-bold rounded-md transition-all flex items-center gap-2 ${employeeSubView === 'birthdays' ? 'bg-white shadow text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}>
-                      <Cake size={14} /> Дни Рождения
+                    <button onClick={() => setEmployeeSubView('birthdays')} className={`px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold rounded-lg transition-all flex items-center gap-2 ${employeeSubView === 'birthdays' ? 'bg-white shadow text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <Cake size={18} className="md:w-5 md:h-5" /> Дни Рождения
+                    </button>
+                    <button onClick={() => handleEmployeeSubViewChange('onboarding')} className={`px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold rounded-lg transition-all flex items-center gap-2 ${employeeSubView === 'onboarding' ? 'bg-white shadow text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <UserCheck size={18} className="md:w-5 md:h-5" /> Онбординг
+                    </button>
+                    <button onClick={() => handleEmployeeSubViewChange('documents')} className={`px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold rounded-lg transition-all flex items-center gap-2 ${employeeSubView === 'documents' ? 'bg-white shadow text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <FileText size={18} className="md:w-5 md:h-5" /> Документы
                     </button>
                   </div>
                   {employeeSubView === 'list' && (
-                    <div className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 self-start sm:self-auto">
+                    <div className="text-xs md:text-sm font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 self-start sm:self-auto">
                       ВСЕГО: <span className="text-slate-800">{filteredEmployees.length}</span>
                     </div>
                   )}
                 </div>
                 {employeeSubView === 'list' && (
                   <div className="relative">
-                    <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <Filter size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <select
                       value={deptFilter}
                       onChange={(e) => setDeptFilter(e.target.value)}
-                      className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer shadow-sm hover:border-blue-300 transition-colors uppercase tracking-wide"
+                      className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm md:text-base font-semibold text-slate-700 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer shadow-sm hover:border-blue-300 transition-colors uppercase tracking-wide"
                     >
                       <option value="all">Все департаменты</option>
                       <option disabled>──────────</option>
@@ -479,7 +467,17 @@ function App() {
                         return <option key={deptId} value={deptId}>{dept.name}</option>
                       })}
                     </select>
-                    <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" />
+                    <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" />
+                  </div>
+                )}
+                {employeeSubView === 'documents' && (
+                  <div className="flex bg-slate-100 p-1.5 rounded-lg gap-1.5">
+                    <button onClick={() => setDocumentsSubView('sent')} className={`flex-1 px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${documentsSubView === 'sent' ? 'bg-white shadow text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <FileText size={18} className="md:w-5 md:h-5" /> Отправленные
+                    </button>
+                    <button onClick={() => setDocumentsSubView('received')} className={`flex-1 px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${documentsSubView === 'received' ? 'bg-white shadow text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <Upload size={18} className="md:w-5 md:h-5" /> Полученные
+                    </button>
                   </div>
                 )}
               </div>
@@ -493,6 +491,20 @@ function App() {
                 {employeeSubView === 'birthdays' && (
                   <div className="animate-in fade-in slide-in-from-bottom-2">
                     <Birthdays employees={employees} />
+                  </div>
+                )}
+                {employeeSubView === 'onboarding' && (
+                  <div className="animate-in fade-in slide-in-from-bottom-2">
+                    <OnboardingDashboard employees={employees} isAdmin={isAdmin} />
+                  </div>
+                )}
+                {employeeSubView === 'documents' && (
+                  <div className="animate-in fade-in slide-in-from-bottom-2">
+                    {documentsSubView === 'sent' ? (
+                      <DocumentsDashboard employees={employees} isAdmin={isAdmin} />
+                    ) : (
+                      <ReceivedDocumentsDashboard employees={employees} isAdmin={isAdmin} />
+                    )}
                   </div>
                 )}
               </div>

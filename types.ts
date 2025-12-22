@@ -175,7 +175,9 @@ export interface StatisticValue {
   notes?: string;
 }
 
-export type ViewMode = 'employees' | 'org_chart' | 'statistics' | 'settings' | 'onboarding' | 'documents' | 'received_documents';
+export type ViewMode = 'employees' | 'org_chart' | 'statistics' | 'settings';
+export type EmployeeSubView = 'list' | 'birthdays' | 'onboarding' | 'documents';
+export type DocumentsSubView = 'sent' | 'received';
 
 // --- Documents Types ---
 
