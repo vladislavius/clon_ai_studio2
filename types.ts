@@ -87,6 +87,64 @@ export interface SubDepartment {
   vfp?: string; // New
 }
 
+// --- Onboarding Types ---
+
+export type OnboardingTaskCategory = 'documents' | 'access' | 'equipment' | 'training';
+export type OnboardingTaskAssignee = 'hr' | 'employee' | 'manager' | 'it';
+export type OnboardingStatus = 'in_progress' | 'completed' | 'cancelled';
+
+export interface OnboardingTaskTemplate {
+  title: string;
+  description?: string;
+  category: OnboardingTaskCategory;
+  assigned_to: OnboardingTaskAssignee;
+  due_days?: number; // Количество дней от начала онбординга
+  order_index: number;
+}
+
+export interface OnboardingTemplate {
+  id: string;
+  name: string;
+  position?: string;
+  department_id?: string;
+  tasks: OnboardingTaskTemplate[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OnboardingTask {
+  id: string;
+  instance_id: string;
+  title: string;
+  description?: string;
+  category: OnboardingTaskCategory;
+  assigned_to: OnboardingTaskAssignee;
+  assigned_user_id?: string;
+  due_date?: string;
+  completed: boolean;
+  completed_at?: string;
+  completed_by?: string;
+  notes?: string;
+  attachments: Attachment[];
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OnboardingInstance {
+  id: string;
+  employee_id: string;
+  template_id?: string;
+  start_date: string;
+  target_completion_date?: string;
+  status: OnboardingStatus;
+  progress_percentage: number;
+  created_at: string;
+  updated_at: string;
+  employee?: Employee; // Для join
+  tasks?: OnboardingTask[]; // Для join
+}
+
 // --- Statistics Types ---
 
 export type StatOwnerType = 'company' | 'department' | 'employee';
@@ -117,4 +175,131 @@ export interface StatisticValue {
   notes?: string;
 }
 
-export type ViewMode = 'employees' | 'org_chart' | 'statistics' | 'settings';
+export type ViewMode = 'employees' | 'org_chart' | 'statistics' | 'settings' | 'onboarding' | 'documents' | 'received_documents';
+
+// --- Documents Types ---
+
+export type DocumentType = 'contract' | 'order' | 'certificate' | 'other';
+export type DocumentStatus = 'draft' | 'pending_signature' | 'signed' | 'archived' | 'rejected';
+export type SignatureType = 'image' | 'digital' | 'stamp';
+export type WorkflowStatus = 'pending' | 'signed' | 'rejected' | 'skipped';
+export type SignerRole = 'employee' | 'manager' | 'hr' | 'director';
+
+export interface DocumentTemplateVariable {
+  name: string;
+  label: string;
+  type: 'text' | 'date' | 'number' | 'select';
+  required?: boolean;
+  options?: string[]; // Для типа 'select'
+  default?: string;
+}
+
+export interface DocumentTemplate {
+  id: string;
+  name: string;
+  type: DocumentType;
+  content: string; // HTML или Markdown с переменными {{variable_name}}
+  variables: DocumentTemplateVariable[];
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+export interface Document {
+  id: string;
+  employee_id: string;
+  template_id?: string;
+  title: string;
+  content: string;
+  version: number;
+  status: DocumentStatus;
+  file_url?: string;
+  file_path?: string;
+  file_name?: string;
+  file_size?: number;
+  mime_type?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  signed_at?: string;
+  archived_at?: string;
+  employee?: Employee; // Для join
+  template?: DocumentTemplate; // Для join
+  signatures?: DocumentSignature[]; // Для join
+  workflow?: DocumentSignatureWorkflow[]; // Для join
+}
+
+export interface DocumentSignature {
+  id: string;
+  document_id: string;
+  signer_id: string;
+  signature_data: string; // Base64 изображение подписи
+  signature_type: SignatureType;
+  signed_at: string;
+  ip_address?: string;
+  user_agent?: string;
+  comment?: string;
+  order_index: number;
+  signer?: Employee; // Для join
+}
+
+export interface DocumentSignatureWorkflow {
+  id: string;
+  document_id: string;
+  signer_id: string;
+  role: SignerRole;
+  required: boolean;
+  order_index: number;
+  status: WorkflowStatus;
+  notified_at?: string;
+  notified_count: number;
+  deadline?: string;
+  created_at: string;
+  signer?: Employee; // Для join
+}
+
+// --- Received Documents Types ---
+
+export type ReceivedDocumentType = 'zrs' | 'contract' | 'order' | 'certificate' | 'other';
+export type ReceivedDocumentStatus = 'received' | 'reviewed' | 'archived' | 'rejected';
+
+export interface ReceivedDocumentSignature {
+  signer_name: string;
+  signer_position: string;
+  signed_at: string;
+  signature_type?: 'image' | 'digital' | 'stamp';
+}
+
+export interface ReceivedDocumentApproval {
+  approver_name: string;
+  approver_position: string;
+  approved_at: string;
+  comment?: string;
+}
+
+export interface ReceivedDocument {
+  id: string;
+  title: string;
+  document_type: ReceivedDocumentType;
+  file_name: string;
+  file_path: string;
+  file_url?: string;
+  file_size?: number;
+  mime_type?: string;
+  employee_id?: string;
+  sender_name?: string;
+  sender_email?: string;
+  received_date: string;
+  status: ReceivedDocumentStatus;
+  description?: string;
+  signatures: ReceivedDocumentSignature[];
+  approvals: ReceivedDocumentApproval[];
+  tags: string[];
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  archived_at?: string;
+  employee?: Employee; // Для join
+  creator?: Employee; // Для join (кто загрузил)
+}

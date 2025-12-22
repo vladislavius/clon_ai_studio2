@@ -158,7 +158,18 @@ const Birthdays: React.FC<BirthdaysProps> = ({ employees }) => {
                 </div>
                 
                 <div className="flex-1">
-                  <h4 className="font-bold text-slate-900 text-lg leading-tight">{emp.full_name.split(' ')[0]} <span className="text-slate-500 font-medium text-sm">{emp.full_name.split(' ')[1]}</span></h4>
+                  <h4 className={`text-lg leading-tight ${emp.daysUntil === 7 || emp.daysUntil === 3 ? 'font-black text-slate-900' : 'font-bold text-slate-900'}`}>
+                    {emp.daysUntil === 7 || emp.daysUntil === 3 ? (
+                      <span className="font-black">{emp.full_name}</span>
+                    ) : (
+                      <>
+                        <span>{emp.full_name.split(' ')[0]}</span>
+                        {emp.full_name.split(' ').slice(1).join(' ') && (
+                          <span className="text-slate-500 font-medium text-sm"> {emp.full_name.split(' ').slice(1).join(' ')}</span>
+                        )}
+                      </>
+                    )}
+                  </h4>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">{emp.position}</p>
                   <p className="text-xs text-blue-500 font-bold mt-0.5">{getDeptName(emp.department)}</p>
                   

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Users, Briefcase, Cake, FileDown, Plus, Search, Menu, LayoutGrid, Database, Settings as SettingsIcon, Loader2, LogOut, TrendingUp, WifiOff, Network, List, ChevronLeft, ChevronRight, X, Shield, Edit3, Lock, Filter } from 'lucide-react';
+import { Users, Briefcase, Cake, FileDown, Plus, Search, Menu, LayoutGrid, Database, Settings as SettingsIcon, Loader2, LogOut, TrendingUp, WifiOff, Network, List, ChevronLeft, ChevronRight, X, Shield, Edit3, Lock, Filter, UserCheck, FileText, Upload } from 'lucide-react';
 import EmployeeList from './components/EmployeeList';
 import EmployeeModal from './components/EmployeeModal';
 import Birthdays from './components/Birthdays';
@@ -10,6 +10,9 @@ import Auth from './components/Auth';
 import ConfirmationModal from './components/ConfirmationModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { OnboardingDashboard } from './components/OnboardingDashboard';
+import { DocumentsDashboard } from './components/DocumentsDashboard';
+import { ReceivedDocumentsDashboard } from './components/ReceivedDocumentsDashboard';
 import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS, DEPT_SORT_ORDER } from './constants';
 import { Employee, ViewMode, Department } from './types';
 import { useAuth } from './hooks/useAuth';
@@ -284,10 +287,24 @@ function App() {
                 {!isSidebarCollapsed && <span className="whitespace-nowrap">Оргсхема</span>}
               </button>
               {isAdmin && (
-                <button onClick={() => handleViewChange('employees')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'employees' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
-                  <div className="flex-shrink-0"><LayoutGrid size={16} className="md:w-5 md:h-5" /></div>
-                  {!isSidebarCollapsed && <span className="whitespace-nowrap">Сотрудники</span>}
-                </button>
+                <>
+                  <button onClick={() => handleViewChange('employees')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'employees' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    <div className="flex-shrink-0"><LayoutGrid size={16} className="md:w-5 md:h-5" /></div>
+                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Сотрудники</span>}
+                  </button>
+                  <button onClick={() => handleViewChange('onboarding')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'onboarding' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    <div className="flex-shrink-0"><UserCheck size={16} className="md:w-5 md:h-5" /></div>
+                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Онбординг</span>}
+                  </button>
+                  <button onClick={() => handleViewChange('documents')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'documents' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    <div className="flex-shrink-0"><FileText size={16} className="md:w-5 md:h-5" /></div>
+                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Документы</span>}
+                  </button>
+                  <button onClick={() => handleViewChange('received_documents')} className={`w-full flex items-center gap-2 md:gap-3 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-xs md:text-sm ${currentView === 'received_documents' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                    <div className="flex-shrink-0"><Upload size={16} className="md:w-5 md:h-5" /></div>
+                    {!isSidebarCollapsed && <span className="whitespace-nowrap">Полученные</span>}
+                  </button>
+                </>
               )}
             </div>
 
@@ -410,6 +427,24 @@ function App() {
             <div className={currentView === 'statistics' ? 'h-full flex flex-col relative' : 'hidden'}>
               <StatisticsTab employees={employees} isOffline={isOffline} selectedDeptId={selectedDept} isAdmin={isAdmin} />
             </div>
+
+            {currentView === 'onboarding' && isAdmin && (
+              <div className="h-full flex flex-col relative overflow-y-auto">
+                <OnboardingDashboard employees={employees} isAdmin={isAdmin} />
+              </div>
+            )}
+
+            {currentView === 'documents' && isAdmin && (
+              <div className="h-full flex flex-col relative overflow-y-auto">
+                <DocumentsDashboard employees={employees} isAdmin={isAdmin} />
+              </div>
+            )}
+
+            {currentView === 'received_documents' && isAdmin && (
+              <div className="h-full flex flex-col relative overflow-y-auto">
+                <ReceivedDocumentsDashboard employees={employees} isAdmin={isAdmin} />
+              </div>
+            )}
 
             <div className={currentView === 'employees' && isAdmin ? 'flex flex-col h-full space-y-4' : 'hidden'}>
               <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
