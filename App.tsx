@@ -21,6 +21,7 @@ import { useOrgStructure } from './hooks/useOrgStructure';
 import { useEmployeeFilters } from './hooks/useEmployeeFilters';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { useDebounce } from './hooks/useDebounce';
+import { useBirthdayNotifications } from './hooks/useBirthdayNotifications';
 
 const DEMO_EMPLOYEES: Employee[] = [
   {
@@ -133,6 +134,9 @@ function App() {
       setEmployees([]);
     }
   }, [session, isOffline, authChecking, fetchEmployees, fetchOrgMetadata, setEmployees]);
+
+  // Автоматическая проверка и отправка уведомлений о днях рождения
+  useBirthdayNotifications(employees);
 
   // Employee filters hook (уже мемоизирован внутри)
   // Используем debouncedSearchTerm вместо searchTerm для оптимизации
@@ -453,11 +457,11 @@ function App() {
                 </div>
                 {employeeSubView === 'list' && (
                   <div className="relative">
-                    <Filter size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <select
                       value={deptFilter}
                       onChange={(e) => setDeptFilter(e.target.value)}
-                      className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm md:text-base font-semibold text-slate-700 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer shadow-sm hover:border-blue-300 transition-colors uppercase tracking-wide"
+                      className="w-full pl-9 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer shadow-sm hover:border-blue-300 transition-colors uppercase tracking-wide"
                     >
                       <option value="all">Все департаменты</option>
                       <option disabled>──────────</option>
@@ -467,7 +471,7 @@ function App() {
                         return <option key={deptId} value={deptId}>{dept.name}</option>
                       })}
                     </select>
-                    <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" />
+                    <ChevronRight size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" />
                   </div>
                 )}
                 {employeeSubView === 'documents' && (

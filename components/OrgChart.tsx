@@ -580,34 +580,57 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                 <div className="h-32 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl mx-2"><p className="font-medium text-xs">Нет сотрудников в этом отделе</p></div>
                             ) : (
                                 filteredList.map(emp => (
-                                    <div key={emp.id} onClick={() => onSelectEmployee(emp)} className="bg-white rounded-lg md:rounded-xl p-3 md:p-4 shadow-sm border border-slate-200 flex gap-3 md:gap-4 items-start cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group/card">
-                                        <div className="w-12 h-12 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-100 shadow-sm relative">
-                                             {emp.photo_url ? (
-                                                <img 
-                                                    src={emp.photo_url} 
-                                                    className="w-full h-full object-cover" 
-                                                    loading="lazy"
-                                                    decoding="async"
-                                                    alt={emp.full_name}
-                                                    onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
-                                                />
-                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-slate-400">
-                                                    <User size={20} className="md:w-6 md:h-6"/>
-                                                </div>
-                                             )}
-                                             <div className="absolute bottom-0 left-0 right-0 h-3 md:h-4 bg-gradient-to-t from-slate-900/20 to-transparent"></div>
+                                    <div key={emp.id} onClick={() => onSelectEmployee(emp)} className="bg-white rounded-lg md:rounded-xl p-2.5 md:p-3 shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group/card">
+                                        {/* Первая строка: Фото, Имя, Должность, Кнопка копирования */}
+                                        <div className="flex items-center gap-2.5 md:gap-3 mb-2">
+                                            <div className="w-10 h-10 md:w-11 md:h-11 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200 shadow-sm">
+                                                {emp.photo_url ? (
+                                                    <img 
+                                                        src={emp.photo_url} 
+                                                        className="w-full h-full object-cover" 
+                                                        loading="lazy"
+                                                        decoding="async"
+                                                        alt={emp.full_name}
+                                                        onError={(e) => (e.currentTarget.src = `https://ui-avatars.com/api/?name=${emp.full_name}&background=f1f5f9&color=64748b`)}
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                                        <User size={18} className="md:w-5 md:h-5"/>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-bold text-slate-800 text-sm md:text-base leading-tight group-hover/card:text-blue-600 transition-colors truncate">{emp.full_name}</div>
+                                                <div className="text-xs md:text-sm text-blue-600 font-semibold mt-0.5 truncate">{emp.position}</div>
+                                            </div>
+                                            <button onClick={(e) => { e.stopPropagation(); handleCopyAll(emp); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0" title="Скопировать данные">{copiedId === `all-${emp.id}` ? <Check size={14} className="md:w-4 md:h-4 text-green-500"/> : <Copy size={14} className="md:w-4 md:h-4"/>}</button>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <div className="flex-1 min-w-0"><div className="font-bold text-slate-800 text-xs md:text-sm leading-tight group-hover/card:text-blue-600 transition-colors truncate">{emp.full_name}</div><div className="text-[10px] md:text-xs text-blue-600 font-bold mt-0.5 truncate">{emp.position}</div></div>
-                                                <button onClick={(e) => { e.stopPropagation(); handleCopyAll(emp); }} className="p-1 md:p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0" title="Скопировать данные">{copiedId === `all-${emp.id}` ? <Check size={13} className="md:w-3.5 md:h-3.5 text-green-500"/> : <Copy size={13} className="md:w-3.5 md:h-3.5"/>}</button>
-                                            </div>
-                                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                <div className="bg-slate-50 rounded-lg px-2 py-1.5 flex items-center justify-between border border-slate-100 group"><div className="flex items-center gap-2 min-w-0"><Hash size={10} className="text-slate-400 flex-shrink-0"/><span className="text-xs text-slate-600 font-medium truncate">{emp.nickname || 'нет ника'}</span></div>{emp.nickname && (<button onClick={(e) => { e.stopPropagation(); handleCopy(emp.nickname || '', `nik-${emp.id}`); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">{copiedId === `nik-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>)}</div>
-                                                <div className="bg-slate-50 rounded-lg px-2 py-1.5 flex items-center justify-between border border-slate-100 group"><div className="flex items-center gap-2 min-w-0"><Phone size={10} className="text-slate-400 flex-shrink-0"/><span className="text-xs text-slate-600 font-medium truncate">{emp.phone || '-'}</span></div>{emp.phone && (<button onClick={(e) => { e.stopPropagation(); handleCopy(emp.phone || '', `ph-${emp.id}`); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">{copiedId === `ph-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>)}</div>
-                                                <div className="bg-slate-50 rounded-lg px-2 py-1.5 flex items-center justify-between border border-slate-100 group sm:col-span-2"><div className="flex items-center gap-2 min-w-0"><MessageCircle size={10} className="text-slate-400 flex-shrink-0"/><span className="text-xs text-slate-600 font-medium truncate">{emp.telegram || '-'}</span></div>{emp.telegram && (<button onClick={(e) => { e.stopPropagation(); handleCopy(emp.telegram || '', `tg-${emp.id}`); }} className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-blue-600 transition-opacity">{copiedId === `tg-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>)}</div>
-                                            </div>
+                                        {/* Вторая строка: Контакты в одну линию */}
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {emp.nickname && (
+                                                <div className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 group/contact">
+                                                    <Hash size={12} className="text-slate-400 flex-shrink-0"/>
+                                                    <span className="text-xs text-slate-600 font-medium truncate max-w-[80px]">{emp.nickname}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.nickname || '', `nik-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-1">{copiedId === `nik-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>
+                                                </div>
+                                            )}
+                                            {emp.phone && (
+                                                <div className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 group/contact">
+                                                    <Phone size={12} className="text-slate-400 flex-shrink-0"/>
+                                                    <span className="text-xs text-slate-600 font-medium truncate max-w-[120px]">{emp.phone}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.phone || '', `ph-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-1">{copiedId === `ph-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>
+                                                </div>
+                                            )}
+                                            {emp.telegram && (
+                                                <div className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 group/contact">
+                                                    <MessageCircle size={12} className="text-slate-400 flex-shrink-0"/>
+                                                    <span className="text-xs text-slate-600 font-medium truncate max-w-[140px]">{emp.telegram}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.telegram || '', `tg-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-1">{copiedId === `tg-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>
+                                                </div>
+                                            )}
+                                            {!emp.nickname && !emp.phone && !emp.telegram && (
+                                                <span className="text-xs text-slate-400 italic">Контакты не указаны</span>
+                                            )}
                                         </div>
                                     </div>
                                 ))
