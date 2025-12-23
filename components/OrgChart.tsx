@@ -304,7 +304,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                                 </div>
                                                 <div className="flex items-center gap-1.5 md:gap-2 p-1 md:p-1.5 rounded-lg border border-slate-100 bg-white/60 backdrop-blur-sm">
                                                      <div className="w-3.5 h-3.5 md:w-4 md:h-4 rounded-full bg-white border border-slate-200 flex items-center justify-center flex-shrink-0 text-slate-400"><User size={7} className="md:w-2 md:h-2"/></div>
-                                                     <div className="min-w-0"><div className="text-[8px] md:text-[9px] font-semibold md:font-bold text-slate-700 leading-tight truncate">{dept.manager}</div></div>
+                                                     <div className="min-w-0"><div className="text-[10px] md:text-xs font-bold text-slate-800 leading-tight truncate">{dept.manager}</div></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -605,31 +605,31 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                             </div>
                                             <button onClick={(e) => { e.stopPropagation(); handleCopyAll(emp); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex-shrink-0" title="Скопировать данные">{copiedId === `all-${emp.id}` ? <Check size={14} className="md:w-4 md:h-4 text-green-500"/> : <Copy size={14} className="md:w-4 md:h-4"/>}</button>
                                         </div>
-                                        {/* Вторая строка: Контакты в одну линию */}
-                                        <div className="flex items-center gap-2 flex-wrap">
+                                        {/* Вторая строка: Контакты в одну линию - компактно, адаптивно */}
+                                        <div className="flex items-center gap-1 md:gap-1.5 flex-nowrap overflow-hidden">
                                             {emp.nickname && (
-                                                <div className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 group/contact">
-                                                    <Hash size={12} className="text-slate-400 flex-shrink-0"/>
-                                                    <span className="text-xs text-slate-600 font-medium truncate max-w-[80px]">{emp.nickname}</span>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.nickname || '', `nik-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-1">{copiedId === `nik-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>
+                                                <div className="flex items-center gap-0.5 md:gap-1 bg-slate-50 rounded px-1 md:px-1.5 py-0.5 border border-slate-100 group/contact flex-shrink-0">
+                                                    <Hash size={9} className="md:w-[10px] md:h-[10px] text-slate-400 flex-shrink-0"/>
+                                                    <span className="text-[9px] md:text-[10px] text-slate-600 font-medium truncate max-w-[50px] md:max-w-[60px]">{emp.nickname}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.nickname || '', `nik-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-0.5 flex-shrink-0">{copiedId === `nik-${emp.id}` ? <Check size={7} className="md:w-2 md:h-2 text-green-500"/> : <Copy size={7} className="md:w-2 md:h-2"/>}</button>
                                                 </div>
                                             )}
                                             {emp.phone && (
-                                                <div className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 group/contact">
-                                                    <Phone size={12} className="text-slate-400 flex-shrink-0"/>
-                                                    <span className="text-xs text-slate-600 font-medium truncate max-w-[120px]">{emp.phone}</span>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.phone || '', `ph-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-1">{copiedId === `ph-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>
+                                                <div className="flex items-center gap-0.5 md:gap-1 bg-slate-50 rounded px-1 md:px-1.5 py-0.5 border border-slate-100 group/contact flex-shrink-0">
+                                                    <Phone size={9} className="md:w-[10px] md:h-[10px] text-slate-400 flex-shrink-0"/>
+                                                    <span className="text-[9px] md:text-[10px] text-slate-600 font-medium truncate max-w-[75px] md:max-w-[90px]">{emp.phone}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.phone || '', `ph-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-0.5 flex-shrink-0">{copiedId === `ph-${emp.id}` ? <Check size={7} className="md:w-2 md:h-2 text-green-500"/> : <Copy size={7} className="md:w-2 md:h-2"/>}</button>
                                                 </div>
                                             )}
                                             {emp.telegram && (
-                                                <div className="flex items-center gap-1.5 bg-slate-50 rounded-md px-2 py-1 border border-slate-100 group/contact">
-                                                    <MessageCircle size={12} className="text-slate-400 flex-shrink-0"/>
-                                                    <span className="text-xs text-slate-600 font-medium truncate max-w-[140px]">{emp.telegram}</span>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.telegram || '', `tg-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-1">{copiedId === `tg-${emp.id}` ? <Check size={10} className="text-green-500"/> : <Copy size={10}/>}</button>
+                                                <div className="flex items-center gap-0.5 md:gap-1 bg-slate-50 rounded px-1 md:px-1.5 py-0.5 border border-slate-100 group/contact flex-shrink-0">
+                                                    <MessageCircle size={9} className="md:w-[10px] md:h-[10px] text-slate-400 flex-shrink-0"/>
+                                                    <span className="text-[9px] md:text-[10px] text-slate-600 font-medium truncate max-w-[85px] md:max-w-[100px]">{emp.telegram}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleCopy(emp.telegram || '', `tg-${emp.id}`); }} className="opacity-0 group-hover/contact:opacity-100 p-0.5 hover:text-blue-600 transition-opacity ml-0.5 flex-shrink-0">{copiedId === `tg-${emp.id}` ? <Check size={7} className="md:w-2 md:h-2 text-green-500"/> : <Copy size={7} className="md:w-2 md:h-2"/>}</button>
                                                 </div>
                                             )}
                                             {!emp.nickname && !emp.phone && !emp.telegram && (
-                                                <span className="text-xs text-slate-400 italic">Контакты не указаны</span>
+                                                <span className="text-[9px] md:text-[10px] text-slate-400 italic flex-shrink-0">Контакты не указаны</span>
                                             )}
                                         </div>
                                     </div>

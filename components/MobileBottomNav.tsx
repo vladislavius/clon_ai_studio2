@@ -78,12 +78,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             onClick={() => onViewChange('employees')}
           />
         )}
-        <NavButton
-          icon={<TrendingUp size={22} />}
-          label="Статистики"
-          active={currentView === 'statistics'}
-          onClick={() => onViewChange('statistics')}
-        />
         {isAdmin && (
           <NavButton
             icon={<Settings size={22} />}
