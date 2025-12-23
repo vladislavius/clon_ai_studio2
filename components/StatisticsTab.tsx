@@ -4,12 +4,18 @@ import { StatisticDefinition, StatisticValue, WiseCondition, Employee } from '..
 import { ORGANIZATION_STRUCTURE, HANDBOOK_STATISTICS } from '../constants';
 import StatsChart from './StatsChart';
 import ConfirmationModal from './ConfirmationModal';
-import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet, Target, Award, Crown, FileText, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet, Target, Award, Crown, FileText, BarChart3, FileText as FileTextIcon, CheckCircle } from 'lucide-react';
 import { format, startOfWeek } from 'date-fns';
 import { exportStatisticsToCSV, exportStatisticsToExcel, exportStatisticsWeekly } from '../utils/exportUtils';
 import { analyzeTrend, getFilteredValues } from '../utils/statistics';
 import { useToast } from './Toast';
 import { useErrorHandler } from '../utils/errorHandler';
+import { getAllStats, getStatById, updateStatPlan, getSuggestedConditionForStat } from '../features/api/mockAdminTechApi';
+import { Stat, StatCondition } from '../shared/types/adminTech';
+import { PlanFactChart } from '../shared/components/PlanFactChart';
+import { TrendBadge } from '../shared/components/TrendBadge';
+import { getConditionColor, getConditionLabel } from '../shared/utils/statCalculations';
+import { ProgramCreator, Program } from './ProgramCreator';
 
 interface StatisticsTabProps {
   employees: Employee[];
@@ -57,6 +63,8 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   const [selectedPeriod, setSelectedPeriod] = useState<string>('3w');
   const [displayMode, setDisplayMode] = useState<'dashboard' | 'list'>('dashboard');
   const [trendFilter, setTrendFilter] = useState<'all' | 'growing' | 'declining'>('all');
+  const [planFilter, setPlanFilter] = useState<'all' | 'achieved' | 'not_achieved'>('all');
+  const [statPlanFactMap, setStatPlanFactMap] = useState<Record<string, { plan: number; fact: number }>>({});
   const [expandedStatId, setExpandedStatId] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingStatDef, setEditingStatDef] = useState<Partial<StatisticDefinition> | null>(null);
@@ -65,6 +73,15 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   const [currentStatValues, setCurrentStatValues] = useState<StatisticValue[]>([]);
   const [editingValue, setEditingValue] = useState<Partial<StatisticValue>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Plan/Fact state for modal
+  const [planFactData, setPlanFactData] = useState<Stat | null>(null);
+  const [planFactCondition, setPlanFactCondition] = useState<StatCondition | null>(null);
+  const [editingPlan, setEditingPlan] = useState<string>('');
+  const [editingFact, setEditingFact] = useState<string>('');
+  const [isEditingPlanFact, setIsEditingPlanFact] = useState(false);
+  const [planFactLoading, setPlanFactLoading] = useState(false);
+  const [modalTab, setModalTab] = useState<'view' | 'create_program'>('view');
 
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -85,6 +102,169 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
       // .finally(() => console.timeEnd('StatsFetch'));
     }
   }, [isOffline]);
+
+  // Вычисляем план/факт для всех статистик с учетом периода (используем useMemo вместо useEffect)
+  const computedPlanFactMap = useMemo(() => {
+    if (definitions.length === 0 || displayMode !== 'dashboard') {
+      return {};
+    }
+
+    const planFactMap: Record<string, { plan: number; fact: number }> = {};
+    
+    definitions.forEach(stat => {
+      // ВАЖНО: используем отфильтрованные значения по выбранному периоду
+      // Сортируем данные перед фильтрацией для гарантии правильного порядка
+      const vals = allLatestValues[stat.id] || [];
+      const sortedVals = [...vals].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const filteredVals = getFilteredValues(sortedVals, selectedPeriod as import('../utils/statistics').PeriodType);
+      const { current } = analyzeTrend(filteredVals, stat.inverted);
+      
+      planFactMap[stat.id] = {
+        plan: current * 1.1,
+        fact: current,
+      };
+    });
+    
+    return planFactMap;
+  }, [definitions, displayMode, allLatestValues, selectedPeriod]);
+
+  // Загружаем данные план/факт из API только один раз при загрузке definitions (асинхронно, не блокируя рендер)
+  const [apiPlanFactData, setApiPlanFactData] = useState<Record<string, { plan: number; fact: number }>>({});
+  
+  useEffect(() => {
+    if (definitions.length > 0 && displayMode === 'dashboard') {
+      // Загружаем асинхронно, не блокируя рендер - используем setTimeout для отложенной загрузки
+      const timer = setTimeout(() => {
+        getAllStats()
+          .then(allStats => {
+            const apiPlanFactMap: Record<string, { plan: number; fact: number }> = {};
+            
+            definitions.forEach(stat => {
+              const planFactStat = allStats.find(s => s.name === stat.title);
+              if (planFactStat) {
+                apiPlanFactMap[stat.id] = {
+                  plan: planFactStat.plan,
+                  fact: planFactStat.fact,
+                };
+              }
+            });
+            
+            setApiPlanFactData(apiPlanFactMap);
+          })
+          .catch(error => {
+            console.error('Error loading plan/fact from API:', error);
+            setApiPlanFactData({});
+          });
+      }, 100); // Небольшая задержка чтобы не блокировать рендер
+      
+      return () => clearTimeout(timer);
+    } else {
+      setApiPlanFactData({});
+    }
+  }, [definitions, displayMode]);
+
+  // Объединяем данные из API с вычисленными (API имеет приоритет, но факт обновляется из периода)
+  // Используем useMemo для мгновенного обновления при изменении периода
+  const mergedPlanFactMap = useMemo(() => {
+    const merged: Record<string, { plan: number; fact: number }> = {};
+    
+    Object.keys(computedPlanFactMap).forEach(statId => {
+      // Если есть данные из API, используем план из API, но факт из вычисленных (с учетом периода)
+      if (apiPlanFactData[statId]) {
+        merged[statId] = {
+          plan: apiPlanFactData[statId].plan,
+          fact: computedPlanFactMap[statId].fact, // Факт обновляется при изменении периода
+        };
+      } else {
+        // Если нет данных из API, используем вычисленные
+        merged[statId] = computedPlanFactMap[statId];
+      }
+    });
+    
+    return merged;
+  }, [computedPlanFactMap, apiPlanFactData]);
+
+  // Обновляем statPlanFactMap только когда mergedPlanFactMap изменился
+  useEffect(() => {
+    setStatPlanFactMap(mergedPlanFactMap);
+  }, [mergedPlanFactMap]);
+
+  // Загружаем данные план/факт при открытии модального окна или изменении периода
+  useEffect(() => {
+    if (expandedStatId) {
+      const loadPlanFactForStat = async () => {
+        setPlanFactLoading(true);
+        try {
+          const stat = definitions.find(d => d.id === expandedStatId);
+          if (!stat) return;
+
+          // ВАЖНО: используем отфильтрованные значения по выбранному периоду
+          // Сортируем данные перед фильтрацией для гарантии правильного порядка
+          const allVals = allLatestValues[stat.id] || [];
+          const sortedVals = [...allVals].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          const vals = getFilteredValues(sortedVals, selectedPeriod as import('../utils/statistics').PeriodType);
+          const { current } = analyzeTrend(vals, stat.inverted);
+          
+          // Пытаемся получить данные из mock API
+          try {
+            const allStats = await getAllStats();
+            let planFactStat = allStats.find(s => s.name === stat.title);
+            if (!planFactStat) {
+              planFactStat = {
+                id: stat.id,
+                name: stat.title,
+                ownerType: stat.type === 'department' ? 'DEPARTMENT' : stat.type === 'employee' ? 'EMPLOYEE' : 'COMPANY',
+                ownerId: stat.owner_id || '',
+                unit: 'шт',
+                period: 'WEEK',
+                plan: current * 1.1,
+                fact: current,
+                previousFact: vals.length > 1 ? vals[vals.length - 2].value : current,
+                trend: 'FLAT',
+                changePercent: 0,
+                history: vals.map(v => v.value), // Используем все отфильтрованные значения по выбранному периоду
+              };
+            }
+            setPlanFactData(planFactStat);
+            setEditingPlan(planFactStat.plan.toString());
+            setEditingFact(planFactStat.fact.toString());
+            
+            const condition = await getSuggestedConditionForStat(planFactStat.id);
+            setPlanFactCondition(condition);
+          } catch (error) {
+            console.error('Error loading plan/fact from API:', error);
+            const planFactStat = {
+              id: stat.id,
+              name: stat.title,
+              ownerType: stat.type === 'department' ? 'DEPARTMENT' : stat.type === 'employee' ? 'EMPLOYEE' : 'COMPANY',
+              ownerId: stat.owner_id || '',
+              unit: 'шт',
+              period: 'WEEK',
+              plan: current * 1.1,
+              fact: current,
+              previousFact: vals.length > 1 ? vals[vals.length - 2].value : current,
+              trend: 'FLAT',
+              changePercent: 0,
+              history: vals.map(v => v.value), // Используем все отфильтрованные значения по выбранному периоду
+            };
+            setPlanFactData(planFactStat);
+            setEditingPlan(planFactStat.plan.toString());
+            setEditingFact(planFactStat.fact.toString());
+          }
+        } catch (error) {
+          console.error('Error loading plan/fact:', error);
+        } finally {
+          setPlanFactLoading(false);
+        }
+      };
+      loadPlanFactForStat();
+      setModalTab('view');
+    } else {
+      setPlanFactData(null);
+      setPlanFactCondition(null);
+      setModalTab('view');
+    }
+  }, [expandedStatId, selectedPeriod, definitions, allLatestValues]);
 
   const fetchDefinitions = async () => {
     try {
@@ -514,10 +694,98 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   };
 
   // Используем общую утилиту getFilteredValues из utils/statistics
+  // ВАЖНО: НЕ мемоизируем - нужно чтобы компоненты перерисовывались при изменении периода
+  // Эта функция используется только в модальном окне, в карточках используем напрямую
   const getFilteredValuesForStat = (statId: string) => {
     const vals = allLatestValues[statId] || [];
-    return getFilteredValues(vals, selectedPeriod as import('../utils/statistics').PeriodType);
+    // Убеждаемся что данные отсортированы по дате (по возрастанию)
+    const sortedVals = [...vals].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return getFilteredValues(sortedVals, selectedPeriod as import('../utils/statistics').PeriodType);
   };
+
+  // Функция для определения последней недели (четверг-среда)
+  const getLastWeekRange = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = воскресенье, 4 = четверг
+    // Находим последний четверг
+    let daysToLastThursday = (dayOfWeek + 7 - 4) % 7;
+    if (daysToLastThursday === 0 && dayOfWeek !== 4) {
+      daysToLastThursday = 7; // Если сегодня не четверг, берем предыдущий четверг
+    }
+    const lastThursday = new Date(today);
+    lastThursday.setDate(today.getDate() - daysToLastThursday);
+    lastThursday.setHours(0, 0, 0, 0);
+    
+    // Среда следующей недели (через 6 дней после четверга)
+    const nextWednesday = new Date(lastThursday);
+    nextWednesday.setDate(lastThursday.getDate() + 6);
+    nextWednesday.setHours(23, 59, 59, 999);
+    
+    return { start: lastThursday, end: nextWednesday };
+  };
+
+  // Подсчет статистик с учетом выбранного департамента и временного периода
+  const getLastWeekStats = useMemo(() => {
+    let growingCount = 0;
+    let decliningCount = 0;
+    let achievedPlanCount = 0;
+    let notAchievedPlanCount = 0;
+    let totalCount = 0;
+
+    // Определяем список ID департаментов для фильтрации
+    let deptIdsToFilter: string[] = [];
+    if (selectedDeptId) {
+      const dept = ORGANIZATION_STRUCTURE[selectedDeptId];
+      if (dept) {
+        // Включаем основной департамент и все его поддепартаменты
+        const subIds = dept.departments ? Object.keys(dept.departments) : [];
+        deptIdsToFilter = [selectedDeptId, ...subIds];
+      } else {
+        deptIdsToFilter = [selectedDeptId];
+      }
+    }
+
+    definitions.forEach(stat => {
+      // Фильтруем по департаменту, если выбран
+      if (selectedDeptId && stat.owner_id && !deptIdsToFilter.includes(stat.owner_id)) {
+        return; // Пропускаем статистики других департаментов
+      }
+
+      totalCount++;
+
+      const vals = allLatestValues[stat.id] || [];
+      // Используем выбранный период для фильтрации значений
+      const filteredValues = getFilteredValues(vals, selectedPeriod as import('../utils/statistics').PeriodType);
+
+      if (filteredValues.length >= 2) {
+        // Сортируем по дате
+        const sorted = [...filteredValues].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const firstValue = sorted[0].value;
+        const lastValue = sorted[sorted.length - 1].value;
+        
+        // Определяем направление тренда
+        const direction = stat.inverted 
+          ? (lastValue < firstValue ? 'up' : lastValue > firstValue ? 'down' : 'flat')
+          : (lastValue > firstValue ? 'up' : lastValue < firstValue ? 'down' : 'flat');
+        
+        if (direction === 'up') growingCount++;
+        if (direction === 'down') decliningCount++;
+      }
+
+      // Проверяем достижение плана
+      const planFact = statPlanFactMap[stat.id];
+      if (planFact !== undefined) {
+        const achievedPlan = planFact.fact >= planFact.plan;
+        if (achievedPlan) {
+          achievedPlanCount++;
+        } else {
+          notAchievedPlanCount++;
+        }
+      }
+    });
+
+    return { totalCount, growingCount, decliningCount, achievedPlanCount, notAchievedPlanCount };
+  }, [definitions, allLatestValues, statPlanFactMap, selectedDeptId, selectedPeriod]);
 
   const getOwnerName = (ownerId: string) => {
     if (ORGANIZATION_STRUCTURE[ownerId]) return ORGANIZATION_STRUCTURE[ownerId].name;
@@ -614,15 +882,33 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
   };
 
   const renderStatCard = (stat: StatisticDefinition, deptColor: string, contextKey: string) => {
-    const vals = getFilteredValuesForStat(stat.id);
+    // ВАЖНО: получаем отфильтрованные значения с учетом выбранного периода
+    // Используем напрямую allLatestValues и selectedPeriod для гарантии обновления
+    const allVals = allLatestValues[stat.id] || [];
+    // Убеждаемся что данные отсортированы по дате (по возрастанию)
+    const sortedVals = [...allVals].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const vals = getFilteredValues(sortedVals, selectedPeriod as import('../utils/statistics').PeriodType);
     const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
     const trendColorHex = isGood ? "#10b981" : "#f43f5e";
+
+    // Получаем данные план/факт для статистики
+    const planFact = statPlanFactMap[stat.id];
+    const hasPlanFact = planFact !== undefined;
+    const achievedPlan = hasPlanFact ? planFact.fact >= planFact.plan : null;
 
     // Фильтрация по тренду
     if (trendFilter === 'growing' && direction !== 'up') return null;
     if (trendFilter === 'declining' && direction !== 'down') return null;
+    
+    // Фильтрация по плану/факту
+    if (planFilter === 'achieved' && (achievedPlan === null || !achievedPlan)) return null;
+    if (planFilter === 'not_achieved' && (achievedPlan === null || achievedPlan)) return null;
+
+    // ВАЖНО: используем selectedPeriod в ключе для принудительного перерисовывания при изменении периода
+    const cardKey = `${contextKey}-${stat.id}-${selectedPeriod}-${vals.length > 0 ? vals[vals.length - 1].value : 0}`;
+    
     return (
-      <div key={`${contextKey}-${stat.id}`} onClick={() => !isEditMode && setExpandedStatId(stat.id)} className={`relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[180px] md:h-[210px] lg:h-[240px] transition-all group ${isEditMode ? 'ring-2 ring-blue-400 ring-offset-2' : 'cursor-pointer hover:shadow-md hover:border-slate-300'}`}>
+      <div key={cardKey} onClick={() => !isEditMode && setExpandedStatId(stat.id)} className={`relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[180px] md:h-[210px] lg:h-[240px] transition-all group ${isEditMode ? 'ring-2 ring-blue-400 ring-offset-2' : 'cursor-pointer hover:shadow-md hover:border-slate-300'}`}>
         <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: deptColor }}></div>
         <div className="p-3 md:p-4 flex flex-col h-full relative z-10">
           <div className="flex justify-between items-start mb-1">
@@ -635,10 +921,24 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
           <div className="flex items-baseline gap-1.5 md:gap-2 mb-1.5 md:mb-2">
             <span className="text-base md:text-xl lg:text-2xl font-black text-slate-900">{current.toLocaleString()}</span>
             {vals.length > 1 && (
-              <div className={`flex items-center text-[9px] md:text-[10px] font-bold ${isGood ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {direction === 'up' && <TrendingUp size={9} className="md:w-[10px] md:h-[10px] mr-0.5" />}
-                {direction === 'down' && <TrendingDown size={9} className="md:w-[10px] md:h-[10px] mr-0.5" />}
+              <div className={`flex items-center gap-1 text-[9px] md:text-[10px] font-bold ${isGood ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {direction === 'up' && <TrendingUp size={9} className="md:w-[10px] md:h-[10px]" />}
+                {direction === 'down' && <TrendingDown size={9} className="md:w-[10px] md:h-[10px]" />}
                 {Math.abs(percent).toFixed(0)}%
+                {/* Индикатор достижения плана - рядом с процентом */}
+                {hasPlanFact && (
+                  <div className={`px-1.5 py-0.5 rounded-full text-[7px] md:text-[8px] font-bold flex items-center gap-0.5 ml-1 ${
+                    achievedPlan 
+                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
+                      : 'bg-rose-100 text-rose-700 border border-rose-300'
+                  }`}>
+                    {achievedPlan ? (
+                      <CheckCircle size={7} className="md:w-[8px] md:h-[8px]" />
+                    ) : (
+                      <X size={7} className="md:w-[8px] md:h-[8px]" />
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -802,6 +1102,7 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
     );
   };
 
+
   return (
     <div className="flex flex-col h-full animate-in fade-in space-y-4">
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3 flex-shrink-0">
@@ -824,23 +1125,65 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
         {displayMode === 'dashboard' && (
           <div className="flex items-center gap-2 mb-3">
             <button
-              onClick={() => setTrendFilter('all')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer ${trendFilter === 'all' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}
+              onClick={() => {
+                setTrendFilter('all');
+                setPlanFilter('all');
+              }}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'all' && planFilter === 'all' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}
             >
               Все
+              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${trendFilter === 'all' && planFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                {getLastWeekStats.totalCount}
+              </span>
             </button>
             <button
               onClick={() => setTrendFilter('growing')}
               className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'growing' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'}`}
             >
               <TrendingUp size={14} /> Растущие
+              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${trendFilter === 'growing' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+                {getLastWeekStats.growingCount}
+              </span>
             </button>
             <button
               onClick={() => setTrendFilter('declining')}
               className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'declining' ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-white text-rose-600 border-rose-200 hover:border-rose-300'}`}
             >
               <TrendingDown size={14} /> Падающие
+              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${trendFilter === 'declining' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'}`}>
+                {getLastWeekStats.decliningCount}
+              </span>
             </button>
+            <button
+              onClick={() => setPlanFilter('achieved')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${planFilter === 'achieved' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'}`}
+            >
+              <CheckCircle size={14} /> Достиг план
+              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${planFilter === 'achieved' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+                {getLastWeekStats.achievedPlanCount}
+              </span>
+            </button>
+            <button
+              onClick={() => setPlanFilter('not_achieved')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${planFilter === 'not_achieved' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-white text-amber-600 border-amber-200 hover:border-amber-300'}`}
+            >
+              <AlertCircle size={14} /> Не достиг
+              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${planFilter === 'not_achieved' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                {getLastWeekStats.notAchievedPlanCount}
+              </span>
+            </button>
+            {(planFilter !== 'all') && (
+              <button
+                onClick={() => {
+                  setPlanFilter('all');
+                  setTrendFilter('all');
+                }}
+                className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 rounded-lg border border-slate-200 hover:border-slate-300"
+                title="Сбросить все фильтры"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
         )}
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mx-1 px-1 touch-pan-x">
@@ -877,7 +1220,10 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
               {(() => {
                 const stat = definitions.find(d => d.id === expandedStatId);
                 if (!stat) return null;
-                const vals = getFilteredValuesForStat(stat.id);
+                // ВАЖНО: используем отфильтрованные значения с учетом выбранного периода
+                const allVals = allLatestValues[stat.id] || [];
+                const sortedVals = [...allVals].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                const vals = getFilteredValues(sortedVals, selectedPeriod as import('../utils/statistics').PeriodType);
                 const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
                 return (
                   <div className="space-y-6 max-w-5xl mx-auto">
@@ -905,16 +1251,198 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
                         </div>
                       </div>
                     </div>
-                    {/* Chart Card */}
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 md:p-6">
-                      <div className="text-xs text-slate-500 font-bold uppercase mb-3 tracking-wider">График динамики</div>
-                      <div className="h-72 md:h-96 lg:h-[450px] w-full"><StatsChart values={vals} inverted={stat.inverted} isDouble={stat.is_double} /></div>
-                    </div>
-                    {/* Action Button */}
-                    {isAdmin && (
-                      <button onClick={() => { setExpandedStatId(null); handleOpenValues(stat); }} className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 cursor-pointer hover:bg-blue-700 transition-all uppercase tracking-wider text-sm md:text-base">
-                        Редактировать данные (Ввод)
+                    {/* Tabs */}
+                    <div className="flex gap-2 border-b-2 border-slate-200 mb-6 pb-2 bg-white -mx-5 md:-mx-8 px-5 md:px-8 sticky top-0 z-10">
+                      <button
+                        onClick={() => {
+                          console.log('[Modal] Switching to view tab, current:', modalTab);
+                          setModalTab('view');
+                        }}
+                        className={`px-4 py-2.5 text-sm md:text-base font-semibold border-b-2 transition-colors ${
+                          modalTab === 'view'
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Просмотр
                       </button>
+                      <button
+                        onClick={() => {
+                          console.log('[Modal] Switching to create_program tab, current:', modalTab);
+                          setModalTab('create_program');
+                        }}
+                        className={`px-4 py-2.5 text-sm md:text-base font-semibold border-b-2 transition-colors ${
+                          modalTab === 'create_program'
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                        }`}
+                      >
+                        Создать Программу
+                      </button>
+                    </div>
+
+                    {/* Tab Content */}
+                    {modalTab === 'view' && (
+                      <>
+                        {/* Chart Card - Plan/Fact */}
+                        {planFactData && !planFactLoading && (
+                          <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 md:p-6 mb-6">
+                            <div className="text-xs text-slate-500 font-bold uppercase mb-3 tracking-wider">График План/Факт</div>
+                            <div className="h-72 md:h-96 w-full flex items-center justify-center overflow-x-auto">
+                              <PlanFactChart
+                                planData={Array(planFactData.history.length).fill(planFactData.plan)}
+                                factData={planFactData.history}
+                                width={Math.max(800, planFactData.history.length * 60)}
+                                height={300}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {/* Original Chart */}
+                        <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 md:p-6 mb-6">
+                          <div className="text-xs text-slate-500 font-bold uppercase mb-3 tracking-wider">График динамики</div>
+                          <div className="h-72 md:h-96 lg:h-[450px] w-full"><StatsChart values={vals} inverted={stat.inverted} isDouble={stat.is_double} /></div>
+                        </div>
+                        {/* Edit Plan/Fact */}
+                        {planFactData && isAdmin && (
+                          <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 md:p-6 mb-6">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">План и Факт</div>
+                              {!isEditingPlanFact && (
+                                <button
+                                  onClick={() => setIsEditingPlanFact(true)}
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm"
+                                >
+                                  <Edit2 size={16} />
+                                  Редактировать
+                                </button>
+                              )}
+                            </div>
+                            {isEditingPlanFact ? (
+                              <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">План</label>
+                                    <input
+                                      type="number"
+                                      value={editingPlan}
+                                      onChange={e => setEditingPlan(e.target.value)}
+                                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Факт</label>
+                                    <input
+                                      type="number"
+                                      value={editingFact}
+                                      onChange={e => setEditingFact(e.target.value)}
+                                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={async () => {
+                                      if (!planFactData) return;
+                                      const planValue = parseFloat(editingPlan);
+                                      const factValue = parseFloat(editingFact);
+                                      if (isNaN(planValue) || planValue < 0 || isNaN(factValue) || factValue < 0) {
+                                        toast.error('Введите корректные значения');
+                                        return;
+                                      }
+                                      setPlanFactLoading(true);
+                                      try {
+                                        await updateStatPlan(planFactData.id, planValue);
+                                        setPlanFactData({ ...planFactData, plan: planValue, fact: factValue });
+                                        toast.success('План и факт обновлены');
+                                        setIsEditingPlanFact(false);
+                                      } catch (error) {
+                                        console.error('Error saving:', error);
+                                        toast.error('Ошибка сохранения');
+                                      } finally {
+                                        setPlanFactLoading(false);
+                                      }
+                                    }}
+                                    disabled={planFactLoading}
+                                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                                  >
+                                    <Save size={16} />
+                                    {planFactLoading ? 'Сохранение...' : 'Сохранить'}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setIsEditingPlanFact(false);
+                                      if (planFactData) {
+                                        setEditingPlan(planFactData.plan.toString());
+                                        setEditingFact(planFactData.fact.toString());
+                                      }
+                                    }}
+                                    className="px-6 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                                  >
+                                    Отмена
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <div className="text-xs text-slate-500 mb-1">План</div>
+                                  <div className="text-2xl font-bold text-slate-800">
+                                    {planFactData.plan.toLocaleString()} {planFactData.unit}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-slate-500 mb-1">Факт</div>
+                                  <div className="text-2xl font-bold text-slate-800">
+                                    {planFactData.fact.toLocaleString()} {planFactData.unit}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* Condition */}
+                        {planFactCondition && (
+                          <div
+                            className="rounded-xl p-6 border-2 mb-6"
+                            style={{
+                              backgroundColor: `${getConditionColor(planFactCondition.level)}15`,
+                              borderColor: getConditionColor(planFactCondition.level),
+                            }}
+                          >
+                            <h3 className="text-sm font-bold uppercase tracking-wider mb-2">Рекомендуемое условие</h3>
+                            <div className="flex items-center gap-3">
+                              <span
+                                className="px-3 py-1 rounded-full font-bold text-white text-sm"
+                                style={{ backgroundColor: getConditionColor(planFactCondition.level) }}
+                              >
+                                {getConditionLabel(planFactCondition.level)}
+                              </span>
+                              <span className="text-slate-700">{planFactCondition.reason}</span>
+                            </div>
+                          </div>
+                        )}
+                        {/* Action Button */}
+                        {isAdmin && (
+                          <button onClick={() => { setExpandedStatId(null); handleOpenValues(stat); }} className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 cursor-pointer hover:bg-blue-700 transition-all uppercase tracking-wider text-sm md:text-base">
+                            Редактировать данные (Ввод)
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    {modalTab === 'create_program' && (
+                      <ProgramCreator
+                        employees={employees}
+                        relatedStat={planFactData ? { id: planFactData.id, name: planFactData.name } : undefined}
+                        onSave={(program) => {
+                          console.log('Saving program:', program);
+                          toast.success(`Программа "${program.title}" успешно создана`);
+                          // Здесь можно добавить сохранение в БД через Supabase
+                          setModalTab('view');
+                        }}
+                        onCancel={() => setModalTab('view')}
+                      />
                     )}
                   </div>
                 );
