@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'; // Добавлен useCallback
 import { ORGANIZATION_STRUCTURE, ROLE_STAT_TEMPLATES, HANDBOOK_STATISTICS } from '../constants';
-import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon, Calendar, Info, HelpCircle, ArrowDownUp, AlertCircle, Phone, User, HeartPulse, File, Lock, DownloadCloud, Link2, Unlink, Sparkles, Copy, Edit2, Layers, Loader2, Minus, Wallet, CreditCard, Landmark, Globe, List } from 'lucide-react';
+import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon, Calendar, Info, HelpCircle, ArrowDownUp, AlertCircle, Phone, User, HeartPulse, File, Lock, DownloadCloud, Link2, Unlink, Sparkles, Copy, Edit2, Layers, Loader2, Minus, Wallet, CreditCard, Landmark, Globe, List, Check, FolderOpen } from 'lucide-react';
 import { Employee as EmployeeType, Attachment, EmergencyContact, StatisticDefinition, StatisticValue, WiseCondition } from '../types';
 import { supabase } from '../supabaseClient';
 import StatsChart from './StatsChart';
@@ -19,6 +19,7 @@ interface EmployeeModalProps {
     onClose: () => void;
     onSave: (employee: EmployeeType) => void;
     initialData: EmployeeType | null;
+    onOpenHatFolder?: (employee: EmployeeType) => void; // Callback для открытия шляпной папки
 }
 
 const DEFAULT_EMPLOYEE: EmployeeType = {
@@ -102,12 +103,17 @@ const getNearestThursday = () => {
     return d.toISOString().split('T')[0];
 };
 
-const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = false, onClose, onSave, initialData }) => {
+const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = false, onClose, onSave, initialData, onOpenHatFolder }) => {
     const [formData, setFormData] = useState<EmployeeType>(DEFAULT_EMPLOYEE);
     const [activeTab, setActiveTab] = useState('general');
     const [isUploading, setIsUploading] = useState(false);
+    const [showDocumentTypeModal, setShowDocumentTypeModal] = useState(false);
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
+    const [selectedDocumentType, setSelectedDocumentType] = useState<'contract_nda' | 'passport_scan' | 'inn_snils' | 'zrs' | 'other' | null>(null);
+    const [previewDocument, setPreviewDocument] = useState<Attachment | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const docInputRef = useRef<HTMLInputElement>(null);
+    const categoryFileInputRef = useRef<HTMLInputElement>(null);
 
     // Toast и Error Handler
     const toast = useToast();
@@ -470,60 +476,179 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
-        setIsUploading(true);
         const file = files[0];
 
         // Валидация файла перед загрузкой
         const validationResult = await validateFile(file, { isImage: isPhoto });
         if (!validationResult.valid) {
             toast.error(validationResult.error || 'Ошибка валидации файла');
-            setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
             if (docInputRef.current) docInputRef.current.value = '';
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            const base64 = ev.target?.result as string;
-            if (isPhoto) { setFormData(prev => ({ ...prev, photo_url: base64 })); }
+        // Если это фото, загружаем сразу
+        if (isPhoto) {
+            setIsUploading(true);
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                const base64 = ev.target?.result as string;
+                setFormData(prev => ({ ...prev, photo_url: base64 }));
 
-            if (supabase) {
-                // Используем безопасное имя файла из валидации
-                const safeFileName = validationResult.safeFileName || file.name;
-                const fileName = `${formData.id}/${Date.now()}_${safeFileName}`;
-                try {
-                    const bucket = isPhoto ? 'employee-files' : 'employee-docs';
-                    const fullPath = isPhoto ? `photos/${fileName}` : `documents/${fileName}`;
-                    const { data, error } = await supabase.storage.from(bucket).upload(fullPath, file);
+                if (supabase) {
+                    const safeFileName = validationResult.safeFileName || file.name;
+                    const fileName = `${formData.id}/${Date.now()}_${safeFileName}`;
+                    try {
+                        const bucket = 'employee-files';
+                        const fullPath = `photos/${fileName}`;
+                        const { data, error } = await supabase.storage.from(bucket).upload(fullPath, file);
 
-                    if (error) {
-                        toast.error('Ошибка загрузки: ' + error.message);
-                        setIsUploading(false);
-                        return;
-                    }
+                        if (error) {
+                            toast.error('Ошибка загрузки: ' + error.message);
+                            setIsUploading(false);
+                            return;
+                        }
 
-                    if (data) {
-                        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
-                        if (isPhoto) {
+                        if (data) {
+                            const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
                             setFormData(prev => ({ ...prev, photo_url: urlData.publicUrl }));
                             toast.success('Фото загружено');
-                        } else {
-                            const newAttachment: Attachment = { id: crypto.randomUUID(), employee_id: formData.id, file_name: safeFileName, file_type: file.type, file_size: file.size, storage_path: data.path, public_url: urlData.publicUrl, uploaded_at: new Date().toISOString() };
-                            setFormData(prev => ({ ...prev, attachments: [...prev.attachments, newAttachment] }));
-                            toast.success('Документ загружен');
                         }
+                    } catch (err) {
+                        console.error("Upload error", err);
+                        toast.error('Ошибка при загрузке файла');
                     }
-                } catch (err) {
-                    console.error("Upload error", err);
-                    toast.error('Ошибка при загрузке файла');
                 }
-            }
-            setIsUploading(false);
-        };
-        reader.readAsDataURL(file);
-        if (fileInputRef.current) fileInputRef.current.value = '';
+                setIsUploading(false);
+            };
+            reader.readAsDataURL(file);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+
+        // Для документов показываем модальное окно выбора типа
+        setPendingFile(file);
+        setShowDocumentTypeModal(true);
         if (docInputRef.current) docInputRef.current.value = '';
+    };
+
+    const handleDocumentTypeConfirm = async () => {
+        if (!pendingFile || !selectedDocumentType) {
+            toast.error('Выберите тип документа');
+            return;
+        }
+
+        await uploadFileWithCategory(pendingFile, selectedDocumentType);
+        setShowDocumentTypeModal(false);
+        setPendingFile(null);
+        setSelectedDocumentType(null);
+    };
+
+    const uploadFileWithCategory = async (file: File, category: 'contract_nda' | 'passport_scan' | 'inn_snils' | 'zrs' | 'other') => {
+        setIsUploading(true);
+        const validationResult = await validateFile(file, { isImage: false });
+        
+        if (!validationResult.valid) {
+            toast.error(validationResult.error || 'Ошибка валидации файла');
+            setIsUploading(false);
+            return;
+        }
+
+        // Получаем расширение файла
+        const fileExt = file.name.split('.').pop()?.toLowerCase() || 'file';
+        // Создаем безопасное имя файла только из латиницы, цифр и подчеркиваний (без кириллицы для избежания проблем с кодировкой)
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        // Используем только ASCII символы для избежания проблем с кодировкой в Storage
+        // Убираем все не-ASCII символы (включая кириллицу)
+        let safeBaseName = file.name
+            .replace(/\.[^/.]+$/, '') // Убираем расширение
+            .replace(/[^\x00-\x7F]/g, '') // Убираем все не-ASCII символы (включая кириллицу)
+            .replace(/[^a-zA-Z0-9\-_\s]/g, '') // Оставляем только латиницу, цифры, дефисы, подчеркивания и пробелы
+            .replace(/\s+/g, '_') // Заменяем пробелы на подчеркивания
+            .substring(0, 50); // Ограничиваем длину
+        
+        // Если после очистки имя стало пустым, используем дефолтное
+        if (!safeBaseName || safeBaseName.trim().length === 0) {
+            safeBaseName = 'document';
+        }
+        
+        // Формируем имя файла: employee_id/timestamp_random_baseName.ext
+        const fileName = `${formData.id}/${timestamp}_${randomSuffix}_${safeBaseName}.${fileExt}`;
+
+        if (supabase) {
+            try {
+                const bucket = 'employee-docs';
+                const fullPath = `documents/${fileName}`;
+                const { data, error } = await supabase.storage.from(bucket).upload(fullPath, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+                if (error) {
+                    toast.error('Ошибка загрузки: ' + error.message);
+                    setIsUploading(false);
+                    return;
+                }
+
+                if (data) {
+                    // Получаем публичный URL
+                    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+                    
+                    // Сохраняем оригинальное имя файла для отображения пользователю
+                    const originalFileName = file.name;
+                    
+                    const newAttachment: Attachment = {
+                        id: crypto.randomUUID(),
+                        employee_id: formData.id,
+                        file_name: originalFileName, // Оригинальное имя для отображения
+                        file_type: file.type,
+                        file_size: file.size,
+                        storage_path: data.path, // Путь в storage (с безопасным именем без кириллицы)
+                        public_url: urlData.publicUrl,
+                        uploaded_at: new Date().toISOString(),
+                        document_category: category
+                    };
+                    setFormData(prev => ({ ...prev, attachments: [...prev.attachments, newAttachment] }));
+                    toast.success('Документ загружен');
+                }
+            } catch (err: any) {
+                console.error("Upload error", err);
+                const errorMessage = err?.message || err?.error?.message || 'Ошибка при загрузке файла';
+                toast.error(`Ошибка загрузки: ${errorMessage}`);
+            }
+        }
+
+        setIsUploading(false);
+    };
+
+    const handleCategoryUpload = (category: 'contract_nda' | 'passport_scan' | 'inn_snils' | 'zrs') => {
+        if (categoryFileInputRef.current) {
+            categoryFileInputRef.current.setAttribute('data-category', category);
+            categoryFileInputRef.current.click();
+        }
+    };
+
+    const handleCategoryFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        const file = files[0];
+        const category = e.target.getAttribute('data-category') as 'contract_nda' | 'passport_scan' | 'inn_snils' | 'zrs' | null;
+        
+        if (!category) {
+            // Если категория не указана, показываем модальное окно
+            setPendingFile(file);
+            setShowDocumentTypeModal(true);
+        } else {
+            // Загружаем сразу с указанной категорией
+            await uploadFileWithCategory(file, category);
+        }
+
+        if (categoryFileInputRef.current) {
+            categoryFileInputRef.current.value = '';
+            categoryFileInputRef.current.removeAttribute('data-category');
+        }
     };
 
     const removeAttachment = (id: string) => { setFormData(prev => ({ ...prev, attachments: prev.attachments.filter(a => a.id !== id) })); };
@@ -622,6 +747,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                             { id: 'docs', label: '3. Документы', restricted: true },
                             { id: 'finance', label: '4. Финансы', restricted: true },
                             { id: 'files', label: '5. Файлы', restricted: true },
+                            { id: 'hatfolder', label: '7. Шляпная папка', icon: <FolderOpen size={14} />, restricted: false },
                             { id: 'stats', label: '6. Статистика', icon: <TrendingUp size={14} />, restricted: false }
                         ].map(tab => {
                             if (isReadOnly && tab.restricted) return null;
@@ -802,23 +928,196 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                         <div className="flex justify-between items-center mb-5">
                                             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><File className="text-slate-500" size={20} /> Файлы и Документы</h3>
                                             {!isReadOnly && <button type="button" onClick={() => docInputRef.current?.click()} className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-100 transition-colors flex items-center gap-2"><Upload size={14} /> Загрузить</button>}
-                                            <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e)} className="hidden" />
+                                            <input type="file" ref={docInputRef} onChange={(e) => handleFileUpload(e)} className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
+                                            <input type="file" ref={categoryFileInputRef} onChange={handleCategoryFileSelect} className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" />
                                         </div>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            {formData.attachments.map(file => (
-                                                <div key={file.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3 group hover:border-blue-300 transition-all">
-                                                    <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 font-bold uppercase text-[10px]">{file.file_type.split('/')[1] || 'FILE'}</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-bold text-slate-800 truncate" title={file.file_name}>{file.file_name}</div>
-                                                        <div className="text-[10px] text-slate-400">{format(new Date(file.uploaded_at), 'dd.MM.yyyy')} • {(file.file_size / 1024).toFixed(0)} KB</div>
-                                                    </div>
-                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <a href={file.public_url} target="_blank" rel="noreferrer" className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><DownloadCloud size={16} /></a>
-                                                        {!isReadOnly && <button type="button" onClick={() => removeAttachment(file.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>}
-                                                    </div>
+
+                                        {/* Чекбоксы для типов документов */}
+                                        {!isReadOnly && (
+                                            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm mb-6">
+                                                <h4 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider">Статус документов</h4>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const existing = formData.attachments.find(f => f.document_category === 'contract_nda');
+                                                            if (existing) {
+                                                                setPreviewDocument(existing);
+                                                            } else if (!isReadOnly) {
+                                                                handleCategoryUpload('contract_nda');
+                                                            }
+                                                        }}
+                                                        className={`flex items-center gap-3 p-3 rounded-lg border transition-all w-full text-left ${
+                                                            formData.attachments.some(f => f.document_category === 'contract_nda')
+                                                                ? 'border-green-200 bg-green-50/50 hover:bg-green-50'
+                                                                : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer'
+                                                        }`}
+                                                    >
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                                            formData.attachments.some(f => f.document_category === 'contract_nda')
+                                                                ? 'bg-green-100 text-green-600'
+                                                                : 'bg-slate-100 text-slate-400'
+                                                        }`}>
+                                                            {formData.attachments.some(f => f.document_category === 'contract_nda') ? (
+                                                                <Check size={16} />
+                                                            ) : (
+                                                                <FileText size={16} />
+                                                            )}
+                                                        </div>
+                                                        <span className="text-sm font-medium text-slate-700 flex-1">Договор/NDA</span>
+                                                        {formData.attachments.some(f => f.document_category === 'contract_nda') && (
+                                                            <div className="flex gap-1">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setPreviewDocument(formData.attachments.find(f => f.document_category === 'contract_nda')!);
+                                                                    }}
+                                                                    className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
+                                                                    title="Просмотр"
+                                                                >
+                                                                    <FileText size={16} />
+                                                                </button>
+                                                                <a
+                                                                    href={formData.attachments.find(f => f.document_category === 'contract_nda')?.public_url}
+                                                                    download
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
+                                                                    title="Скачать"
+                                                                >
+                                                                    <DownloadCloud size={16} />
+                                                                </a>
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                    {[
+                                                        { category: 'passport_scan', label: 'Скан паспорта' },
+                                                        { category: 'inn_snils', label: 'ИНН/СНИЛС' },
+                                                        { category: 'zrs', label: 'ЗРС' },
+                                                    ].map(({ category, label }) => (
+                                                        <button
+                                                            key={category}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const existing = formData.attachments.find(f => f.document_category === category);
+                                                                if (existing) {
+                                                                    setPreviewDocument(existing);
+                                                                } else if (!isReadOnly) {
+                                                                    handleCategoryUpload(category as any);
+                                                                }
+                                                            }}
+                                                            className={`flex items-center gap-3 p-3 rounded-lg border transition-all w-full text-left ${
+                                                                formData.attachments.some(f => f.document_category === category)
+                                                                    ? 'border-green-200 bg-green-50/50 hover:bg-green-50'
+                                                                    : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer'
+                                                            }`}
+                                                        >
+                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                                                formData.attachments.some(f => f.document_category === category)
+                                                                    ? 'bg-green-100 text-green-600'
+                                                                    : 'bg-slate-100 text-slate-400'
+                                                            }`}>
+                                                                {formData.attachments.some(f => f.document_category === category) ? (
+                                                                    <Check size={16} />
+                                                                ) : (
+                                                                    <FileText size={16} />
+                                                                )}
+                                                            </div>
+                                                            <span className="text-sm font-medium text-slate-700 flex-1">{label}</span>
+                                                            {formData.attachments.some(f => f.document_category === category) && (
+                                                                <div className="flex gap-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setPreviewDocument(formData.attachments.find(f => f.document_category === category)!);
+                                                                        }}
+                                                                        className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
+                                                                        title="Просмотр"
+                                                                    >
+                                                                        <FileText size={16} />
+                                                                    </button>
+                                                                    <a
+                                                                        href={formData.attachments.find(f => f.document_category === category)?.public_url}
+                                                                        download
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"
+                                                                        title="Скачать"
+                                                                    >
+                                                                        <DownloadCloud size={16} />
+                                                                    </a>
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    ))}
                                                 </div>
-                                            ))}
+                                            </div>
+                                        )}
+
+                                        {/* Список загруженных файлов с категориями */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            {formData.attachments.map(file => {
+                                                const categoryLabels: Record<string, string> = {
+                                                    'contract_nda': 'Договор/NDA',
+                                                    'passport_scan': 'Скан паспорта',
+                                                    'inn_snils': 'ИНН/СНИЛС',
+                                                    'zrs': 'ЗРС',
+                                                    'other': 'Другое'
+                                                };
+                                                const categoryLabel = file.document_category ? categoryLabels[file.document_category] : 'Документ';
+                                                
+                                                return (
+                                                    <div key={file.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3 group hover:border-blue-300 transition-all">
+                                                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500 font-bold uppercase text-[10px]">{file.file_type.split('/')[1] || 'FILE'}</div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-xs font-semibold text-blue-600 mb-0.5">{categoryLabel}</div>
+                                                            <div className="text-sm font-bold text-slate-800 truncate" title={file.file_name}>{file.file_name}</div>
+                                                            <div className="text-[10px] text-slate-400">{format(new Date(file.uploaded_at), 'dd.MM.yyyy')} • {(file.file_size / 1024).toFixed(0)} KB</div>
+                                                        </div>
+                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <a href={file.public_url} target="_blank" rel="noreferrer" className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg" title="Скачать"><DownloadCloud size={16} /></a>
+                                                            {!isReadOnly && <button type="button" onClick={() => removeAttachment(file.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" title="Удалить"><Trash2 size={16} /></button>}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                             {formData.attachments.length === 0 && <div className="col-span-full text-center p-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 text-slate-400"><p className="font-medium">Нет загруженных файлов</p></div>}
+                                        </div>
+                                    </section>
+                                </div>
+                            )}
+
+                            {/* TAB: HAT FOLDER */}
+                            {activeTab === 'hatfolder' && (
+                                <div className="space-y-8 animate-in fade-in slide-in-from-right-4">
+                                    <section>
+                                        <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
+                                            <div className="w-1.5 h-6 bg-amber-500 rounded-full"></div>
+                                            Шляпная папка сотрудника
+                                        </h3>
+                                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                            <div className="text-center py-12">
+                                                <FolderOpen size={64} className="mx-auto mb-4 text-amber-500 opacity-50" />
+                                                <h4 className="text-xl font-bold text-slate-800 mb-2">Шляпная папка поста</h4>
+                                                <p className="text-slate-600 mb-6 max-w-md mx-auto">
+                                                    Шляпная папка содержит должностную инструкцию, описание обязанностей, контрольные листы и материалы для обучения сотрудника на данном посту.
+                                                </p>
+                                                {onOpenHatFolder && formData.id && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onOpenHatFolder(formData);
+                                                        }}
+                                                        className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold rounded-xl hover:from-amber-600 hover:to-orange-700 transition-all duration-200 flex items-center gap-2 mx-auto shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                                                    >
+                                                        <FolderOpen size={20} />
+                                                        <span>Открыть Шляпную папку</span>
+                                                    </button>
+                                                )}
+                                                {!onOpenHatFolder && (
+                                                    <p className="text-sm text-slate-500">Функционал недоступен</p>
+                                                )}
+                                            </div>
                                         </div>
                                     </section>
                                 </div>
@@ -1101,6 +1400,175 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                                         ))}
                                     </tbody>
                                 </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Модальное окно выбора типа документа */}
+            {showDocumentTypeModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 animate-in slide-in-from-bottom-4">
+                        <div className="p-6 border-b border-slate-200">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-xl font-bold text-slate-800">Выберите тип документа</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowDocumentTypeModal(false);
+                                        setPendingFile(null);
+                                        setSelectedDocumentType(null);
+                                    }}
+                                    className="text-slate-400 hover:text-slate-600"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-6">
+                            <div className="space-y-2 mb-6">
+                                {[
+                                    { value: 'contract_nda', label: 'Договор/NDA' },
+                                    { value: 'passport_scan', label: 'Скан паспорта' },
+                                    { value: 'inn_snils', label: 'ИНН/СНИЛС' },
+                                    { value: 'zrs', label: 'ЗРС' },
+                                    { value: 'other', label: 'Другое' },
+                                ].map((type) => (
+                                    <label
+                                        key={type.value}
+                                        className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 cursor-pointer transition-all"
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="document_type"
+                                            value={type.value}
+                                            checked={selectedDocumentType === type.value}
+                                            onChange={() => setSelectedDocumentType(type.value as any)}
+                                            className="w-4 h-4 text-blue-600"
+                                        />
+                                        <span className="text-sm font-medium text-slate-700">{type.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowDocumentTypeModal(false);
+                                        setPendingFile(null);
+                                        setSelectedDocumentType(null);
+                                    }}
+                                    className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-semibold"
+                                >
+                                    Отмена
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDocumentTypeConfirm}
+                                    disabled={!selectedDocumentType || isUploading}
+                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {isUploading ? (
+                                        <>
+                                            <Loader2 size={16} className="animate-spin" />
+                                            Загрузка...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Upload size={16} />
+                                            Загрузить
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Модальное окно предпросмотра документа */}
+            {previewDocument && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-slate-200/50 overflow-hidden">
+                        {/* Header */}
+                        <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
+                                    <FileText className="text-white" size={22} />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black text-slate-800">{previewDocument.file_name}</h2>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        {format(new Date(previewDocument.uploaded_at), 'dd.MM.yyyy')} • {(previewDocument.file_size / 1024).toFixed(0)} KB
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <a
+                                    href={previewDocument.public_url}
+                                    download
+                                    className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    title="Скачать"
+                                >
+                                    <DownloadCloud size={18} />
+                                </a>
+                                <button
+                                    onClick={() => setPreviewDocument(null)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white/80 rounded-xl transition-all"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+                            {previewDocument.file_type.startsWith('image/') ? (
+                                <div className="flex items-center justify-center min-h-[400px]">
+                                    <img
+                                        src={previewDocument.public_url}
+                                        alt={previewDocument.file_name}
+                                        className="max-w-full max-h-[70vh] rounded-lg shadow-lg"
+                                        onError={(e) => {
+                                            e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23f1f5f9" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%2394a3b8" font-family="Arial" font-size="16"%3EОшибка загрузки изображения%3C/text%3E%3C/svg%3E';
+                                        }}
+                                    />
+                                </div>
+                            ) : previewDocument.file_type === 'application/pdf' ? (
+                                <div className="w-full h-[70vh]">
+                                    <iframe
+                                        src={previewDocument.public_url}
+                                        className="w-full h-full rounded-lg border border-slate-200 shadow-lg"
+                                        title={previewDocument.file_name}
+                                    />
+                                </div>
+                            ) : previewDocument.file_type.includes('word') || previewDocument.file_type.includes('document') ? (
+                                <div className="bg-white rounded-lg border border-slate-200 p-8 text-center">
+                                    <FileText size={64} className="text-slate-300 mx-auto mb-4" />
+                                    <p className="text-slate-600 font-medium mb-4">Предпросмотр DOCX недоступен</p>
+                                    <a
+                                        href={previewDocument.public_url}
+                                        download
+                                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    >
+                                        <DownloadCloud size={18} />
+                                        Скачать документ
+                                    </a>
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-lg border border-slate-200 p-8 text-center">
+                                    <FileText size={64} className="text-slate-300 mx-auto mb-4" />
+                                    <p className="text-slate-600 font-medium mb-4">Предпросмотр недоступен</p>
+                                    <a
+                                        href={previewDocument.public_url}
+                                        download
+                                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    >
+                                        <DownloadCloud size={18} />
+                                        Скачать файл
+                                    </a>
+                                </div>
                             )}
                         </div>
                     </div>

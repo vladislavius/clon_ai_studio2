@@ -36,8 +36,8 @@ export default defineConfig({
     hmr: {
       protocol: 'ws',
       host: '127.0.0.1',
-      port: 5173,
-      clientPort: 5173,
+      // Убираем жестко прописанные порты - Vite автоматически определит правильный порт
+      // clientPort будет автоматически равен server.port
     },
     headers: {
       'Service-Worker-Allowed': '/',

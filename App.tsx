@@ -13,8 +13,10 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { OnboardingDashboard } from './components/OnboardingDashboard';
 import { DocumentsDashboard } from './components/DocumentsDashboard';
 import { ReceivedDocumentsDashboard } from './components/ReceivedDocumentsDashboard';
+import AddEmployeeWizard from './components/AddEmployeeWizard';
+import HatFolderEditor from './components/HatFolderEditor';
 import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS, DEPT_SORT_ORDER } from './constants';
-import { Employee, ViewMode, Department, EmployeeSubView, DocumentsSubView } from './types';
+import { Employee, ViewMode, Department, EmployeeSubView, DocumentsSubView, EmployeeWizardData } from './types';
 import { useAuth } from './hooks/useAuth';
 import { useEmployees } from './hooks/useEmployees';
 import { useOrgStructure } from './hooks/useOrgStructure';
@@ -22,6 +24,7 @@ import { useEmployeeFilters } from './hooks/useEmployeeFilters';
 import { usePullToRefresh } from './hooks/usePullToRefresh';
 import { useDebounce } from './hooks/useDebounce';
 import { useBirthdayNotifications } from './hooks/useBirthdayNotifications';
+import { useToast } from './components/Toast';
 
 const DEMO_EMPLOYEES: Employee[] = [
   {
@@ -94,6 +97,21 @@ function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [hatFolderEditor, setHatFolderEditor] = useState<{
+    isOpen: boolean;
+    employeeId: string;
+    postId: string;
+    employeeName: string;
+    postName: string;
+    departmentId?: string;
+  }>({
+    isOpen: false,
+    employeeId: '',
+    postId: '',
+    employeeName: '',
+    postName: '',
+  });
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -137,6 +155,9 @@ function App() {
 
   // Автоматическая проверка и отправка уведомлений о днях рождения
   useBirthdayNotifications(employees);
+  
+  // Toast для уведомлений
+  const toast = useToast();
 
   // Employee filters hook (уже мемоизирован внутри)
   // Используем debouncedSearchTerm вместо searchTerm для оптимизации
@@ -209,9 +230,104 @@ function App() {
 
   const handleAddClick = useCallback(() => {
     if (!isAdmin) return;
-    setEditingEmployee(null);
-    setIsModalOpen(true);
+    setIsWizardOpen(true);
   }, [isAdmin]);
+
+  const handleCloseWizard = useCallback(() => {
+    setIsWizardOpen(false);
+  }, []);
+
+  const handleWizardComplete = useCallback(async (wizardData: EmployeeWizardData) => {
+    try {
+      // 1. Создаем ID сотрудника
+      const employeeId = crypto.randomUUID();
+      
+      // 2. Формируем полное имя
+      const fullName = `${wizardData.last_name} ${wizardData.first_name} ${wizardData.middle_name || ''}`.trim();
+      
+      // 3. Определяем должность из поста
+      const position = wizardData.post_info?.name || 'Сотрудник';
+      
+      // 4. Определяем департамент и поддепартамент
+      const department = wizardData.post_info?.department_id ? [wizardData.post_info.department_id] : [];
+      const subdepartment = wizardData.post_id ? [wizardData.post_id] : [];
+      
+      // 5. Создаем объект сотрудника со всеми полями
+      const newEmployee: Employee = {
+        id: employeeId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        full_name: fullName,
+        position: position,
+        nickname: wizardData.nickname || undefined,
+        email: wizardData.email || undefined,
+        email2: wizardData.email2 || undefined,
+        phone: wizardData.phone || undefined,
+        whatsapp: wizardData.whatsapp || undefined,
+        telegram: wizardData.telegram || undefined,
+        birth_date: wizardData.birth_date || undefined,
+        join_date: wizardData.start_date || undefined,
+        actual_address: wizardData.actual_address || undefined,
+        registration_address: wizardData.registration_address || undefined,
+        department: department,
+        subdepartment: subdepartment,
+        emergency_contacts: wizardData.emergency_contacts || [],
+        custom_fields: [],
+        attachments: [],
+        inn: wizardData.inn || undefined,
+        passport_number: wizardData.passport_series && wizardData.passport_number 
+          ? `${wizardData.passport_series} ${wizardData.passport_number}` 
+          : undefined,
+        passport_date: wizardData.passport_date || undefined,
+        passport_issuer: wizardData.passport_issuer || undefined,
+        foreign_passport: wizardData.foreign_passport || undefined,
+        foreign_passport_date: wizardData.foreign_passport_date || undefined,
+        foreign_passport_issuer: wizardData.foreign_passport_issuer || undefined,
+        bank_name: wizardData.bank_name || undefined,
+        bank_details: wizardData.bank_details || undefined,
+        crypto_wallet: wizardData.crypto_wallet || undefined,
+        crypto_currency: wizardData.crypto_currency || undefined,
+        crypto_network: wizardData.crypto_network || undefined,
+      };
+
+      // 6. Сохраняем сотрудника
+      await handleSaveEmployee(newEmployee, isAdmin, isOffline);
+      
+      // 7. Выполняем автоматические действия
+      if (!isOffline) {
+        const { executeAutomaticActions } = await import('./utils/employeeOnboarding');
+        const results = await executeAutomaticActions(newEmployee, wizardData, employees);
+        
+        console.log('[Wizard Complete] Автоматические действия выполнены:', results);
+        
+        // Показываем уведомление о результатах
+        if (results.hatFileCreated) {
+          toast.success('Шляпная папка создана');
+        }
+        if (results.onboardingPlanCreated) {
+          toast.success('План онбординга создан');
+        }
+        if (results.itRequestCreated) {
+          toast.success('Заявка в IT создана');
+        }
+        
+        // Открываем редактор Шляпной папки для заполнения
+        setHatFolderEditor({
+          isOpen: true,
+          employeeId: newEmployee.id,
+          postId: wizardData.post_id || '',
+          employeeName: newEmployee.full_name,
+          postName: wizardData.post_info?.name || 'Пост',
+          departmentId: wizardData.post_info?.department_id,
+        });
+      }
+      
+      setIsWizardOpen(false);
+    } catch (error) {
+      console.error('Ошибка при создании сотрудника из визарда:', error);
+      throw error;
+    }
+  }, [handleSaveEmployee, isAdmin, isOffline]);
 
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
@@ -528,7 +644,45 @@ function App() {
           onClose={handleCloseModal}
           onSave={handleSaveEmployeeWrapper}
           initialData={editingEmployee}
+          onOpenHatFolder={(employee) => {
+            // Определяем postId и departmentId из данных сотрудника
+            const postId = employee.subdepartment?.[0] || '';
+            const departmentId = employee.department?.[0] || '';
+            
+            // Получаем название поста из ORGANIZATION_STRUCTURE
+            const dept = departmentId ? ORGANIZATION_STRUCTURE[departmentId] : null;
+            const post = dept?.departments?.[postId];
+            const postName = post?.name || employee.position || 'Пост';
+            
+            setHatFolderEditor({
+              isOpen: true,
+              employeeId: employee.id,
+              postId: postId,
+              employeeName: employee.full_name,
+              postName: postName,
+              departmentId: departmentId,
+            });
+          }}
         />
+
+        <AddEmployeeWizard
+          isOpen={isWizardOpen}
+          onClose={handleCloseWizard}
+          onComplete={handleWizardComplete}
+          employees={employees}
+          departments={orgStructure}
+        />
+
+            <HatFolderEditor
+                isOpen={hatFolderEditor.isOpen}
+                onClose={() => setHatFolderEditor(prev => ({ ...prev, isOpen: false }))}
+                employeeId={hatFolderEditor.employeeId}
+                postId={hatFolderEditor.postId}
+                employeeName={hatFolderEditor.employeeName}
+                postName={hatFolderEditor.postName}
+                departmentId={hatFolderEditor.departmentId}
+                isTrainer={isAdmin}
+            />
       </div >
     </ErrorBoundary >
   );

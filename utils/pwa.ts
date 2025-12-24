@@ -1,8 +1,26 @@
 
 /**
  * Регистрирует Service Worker для PWA
+ * Отключается в dev режиме для избежания конфликтов с HMR
  */
 export function registerServiceWorker(): void {
+  // Отключаем Service Worker в dev режиме
+  const isDev = import.meta.env.DEV || 
+                window.location.hostname === 'localhost' || 
+                window.location.hostname === '127.0.0.1';
+  
+  if (isDev) {
+    // В dev режиме отменяем регистрацию всех Service Workers
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((registration) => {
+          registration.unregister();
+        });
+      });
+    }
+    return;
+  }
+  
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker
