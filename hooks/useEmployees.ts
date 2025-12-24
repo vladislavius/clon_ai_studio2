@@ -150,14 +150,39 @@ export function useEmployees(): UseEmployeesReturn {
   }, [toast]);
 
   const sanitizePayload = (emp: Employee) => {
-    const { attachments, ...data } = emp;
+    const { attachments, version, ...data } = emp;
     const payload: Record<string, unknown> = { ...data };
+    
+    // Для новых сотрудников не передаем version
+    // Для существующих - передаем только если есть
+    if (emp.id && version !== undefined) {
+      payload.version = version;
+    }
+    
+    // Очищаем пустые строки в датах
     const dateFields = ['birth_date', 'join_date', 'passport_date', 'foreign_passport_date'];
     dateFields.forEach(field => {
+      if (payload[field] === '' || payload[field] === null || payload[field] === undefined) {
+        payload[field] = null;
+      }
+    });
+    
+    // Очищаем пустые строки в других опциональных полях
+    const optionalStringFields = ['email', 'email2', 'phone', 'whatsapp', 'telegram', 'nickname', 
+      'actual_address', 'registration_address', 'inn', 'passport_number', 'passport_issuer',
+      'foreign_passport', 'foreign_passport_issuer', 'bank_name', 'bank_details', 
+      'crypto_wallet', 'crypto_currency', 'crypto_network'];
+    optionalStringFields.forEach(field => {
       if (payload[field] === '') {
         payload[field] = null;
       }
     });
+    
+    // Убеждаемся что обязательные поля есть
+    if (!payload.full_name || !payload.position) {
+      throw new Error('Обязательные поля full_name и position должны быть заполнены');
+    }
+    
     return { payload, attachments };
   };
 

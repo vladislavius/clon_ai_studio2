@@ -26,6 +26,9 @@ export const ALLOWED_DOCUMENT_TYPES = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
     'text/plain',
     'text/csv',
+    'image/jpeg', // .jpg, .jpeg
+    'image/jpg', // .jpg
+    'image/png', // .png
 ] as const;
 
 /** Запрещенные расширения файлов (исполняемые и скрипты) */
