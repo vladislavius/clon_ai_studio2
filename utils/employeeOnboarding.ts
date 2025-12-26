@@ -31,14 +31,14 @@ export async function createHatFile(
     const basicData: HatFileBasicData = {
       post_name: postInfo?.name || post?.name || 'Пост',
       company_goal: '', // Заполняется HR
-      post_goal: post?.purpose || postInfo?.purpose || '',
-      department_name: dept?.name || '',
-      responsibilities: post?.functions || [],
+      post_goal: '', // Заполняется HR
+      department_name: dept?.name || postInfo?.department_name || '',
+      responsibilities: dept?.functions || [],
       products: post?.vfp ? [post.vfp] : (postInfo?.vfp ? [postInfo.vfp] : []),
-      statistics: post?.statistics || postInfo?.statistics || [],
-      org_chart_position: `${dept?.name || ''} → ${postInfo?.name || ''}`,
-      reporting_line: post?.reporting_line || '',
-      communication_lines: post?.communication_lines || [],
+      statistics: postInfo?.statistics || [],
+      org_chart_position: `${dept?.name || postInfo?.department_name || ''} → ${postInfo?.name || ''}`,
+      reporting_line: '',
+      communication_lines: [],
     };
 
     // Создаем структуру Шляпной папки
@@ -86,17 +86,31 @@ export async function createHatFile(
 
     // Сохраняем в БД (если есть таблица hat_files)
     // Пока сохраняем в custom_fields сотрудника как JSON
+    // Сначала получаем текущие custom_fields, чтобы не перезаписать другие поля
+    const { data: currentData } = await supabase
+      .from('employees')
+      .select('custom_fields')
+      .eq('id', employeeId)
+      .single();
+
+    const customFields = currentData?.custom_fields || [];
+    const hatFileIndex = customFields.findIndex((f: any) => f.key === 'hat_file');
+    
+    const hatFileEntry = {
+      key: 'hat_file',
+      value: hatFile,
+      type: 'hat_file',
+    };
+
+    if (hatFileIndex >= 0) {
+      customFields[hatFileIndex] = hatFileEntry;
+    } else {
+      customFields.push(hatFileEntry);
+    }
+
     const { error } = await supabase
       .from('employees')
-      .update({
-        custom_fields: [
-          {
-            key: 'hat_file',
-            value: hatFile,
-            type: 'hat_file',
-          },
-        ],
-      })
+      .update({ custom_fields: customFields })
       .eq('id', employeeId);
 
     if (error) {
