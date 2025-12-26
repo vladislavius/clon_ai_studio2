@@ -570,7 +570,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                         <div className="sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10 px-4 md:px-6 py-2 md:py-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0">
                             <h4 className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5 md:gap-2"><Users size={11} className="md:w-3 md:h-3"/> Сотрудники ({filteredList.length})</h4>
                             <div className="relative w-full sm:w-40">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" size={11} className="md:w-3 md:h-3"/>
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 md:w-3 md:h-3" size={11}/>
                                 <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} type="text" placeholder="Поиск..." className="w-full pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-1 focus:ring-blue-300"/>
                             </div>
                         </div>
