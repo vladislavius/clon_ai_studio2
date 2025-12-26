@@ -84,6 +84,7 @@ export interface SubDepartment {
   name: string;
   code: string;
   manager: string;
+  employeeName?: string; // Имя сотрудника на посту
   description?: string; // New
   vfp?: string; // New
 }
