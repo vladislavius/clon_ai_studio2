@@ -62,3 +62,4 @@ npm install react@^18.2.0 react-dom@^18.2.0 --save-exact
 После перезапуска сервера WebSocket должен работать корректно.
 
 
+

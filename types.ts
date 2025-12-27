@@ -68,15 +68,38 @@ export interface Department {
   color: string;
   icon: string;
   description: string;
-  longDescription?: string; // New: Detailed description
-  functions?: string[]; // New: List of functions
-  mainStat?: string; // New: Main Statistic name
+  longDescription?: string; // Детальное описание
+  functions?: string[]; // Функции департамента
+  mainStat?: string; // Главная статистика
   manager: string;
-  goal?: string; // Цель
+  goal?: string; // Цель департамента
   vfp?: string; // Ценный Конечный Продукт (ЦКП)
-  troubleSigns?: string[]; // New: Признаки проблем
-  developmentActions?: string[]; // New: Действия по развитию
+  troubleSigns?: string[]; // Признаки проблем
+  developmentActions?: string[]; // Действия по развитию
+  tools?: string[]; // Инструменты департамента
+  processes?: string[]; // Процессы
+  keyIndicators?: string[]; // Ключевые показатели
+  productFlow?: string; // Описание потока продукта
+  connections?: string[]; // Связи с другими департаментами
+  content?: string; // Детальное описание (HTML или markdown)
   departments?: Record<string, SubDepartment>;
+}
+
+// Секция внутри отдела
+export interface DepartmentSection {
+  id: string;
+  name: string;
+  description?: string; // Описание секции
+  goal?: string; // Цель секции
+  vfp?: string; // ЦКП секции
+  mainStat?: string; // Главная статистика секции
+  tasks?: string[]; // Задачи секции
+  tools?: string[]; // Инструменты
+  examples?: string[]; // Примеры
+  processes?: string[]; // Процессы
+  responsibilities?: string[]; // Обязанности
+  keyIndicators?: string[]; // Ключевые показатели
+  content?: string; // Детальное описание (HTML или markdown)
 }
 
 export interface SubDepartment {
@@ -85,8 +108,20 @@ export interface SubDepartment {
   code: string;
   manager: string;
   employeeName?: string; // Имя сотрудника на посту
-  description?: string; // New
-  vfp?: string; // New
+  description?: string; // Описание отдела
+  longDescription?: string; // Детальное описание
+  goal?: string; // Цель отдела
+  vfp?: string; // Ценный Конечный Продукт (ЦКП)
+  mainStat?: string; // Главная статистика отдела
+  tasks?: string[]; // Задачи отдела
+  tools?: string[]; // Инструменты
+  processes?: string[]; // Процессы
+  responsibilities?: string[]; // Обязанности
+  keyIndicators?: string[]; // Ключевые показатели
+  troubleSigns?: string[]; // Признаки проблем
+  developmentActions?: string[]; // Действия по развитию
+  sections?: Record<string, DepartmentSection>; // Секции внутри отдела
+  content?: string; // Детальное описание (HTML или markdown)
 }
 
 // --- Onboarding Types ---

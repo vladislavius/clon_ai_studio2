@@ -88,7 +88,10 @@ async function sendTelegramNotification(
   message: string
 ): Promise<boolean> {
   try {
-    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    console.log('[Telegram] Отправка сообщения:', { url, chatId, messageLength: message.length });
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -98,9 +101,26 @@ async function sendTelegramNotification(
       }),
     });
     
-    return response.ok;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[Telegram] Ошибка API:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData
+      });
+      return false;
+    }
+    
+    const result = await response.json();
+    if (result.ok) {
+      console.log('[Telegram] Сообщение успешно отправлено');
+      return true;
+    } else {
+      console.error('[Telegram] Ошибка в ответе:', result);
+      return false;
+    }
   } catch (error) {
-    console.error('Telegram notification error:', error);
+    console.error('[Telegram] Ошибка отправки уведомления:', error);
     return false;
   }
 }
@@ -132,12 +152,16 @@ export function useBirthdayNotifications(employees: Employee[]): void {
 
   useEffect(() => {
     // Проверяем только один раз при загрузке или если изменилась дата
-    if (employees.length === 0) return;
+    if (employees.length === 0) {
+      console.log('[Birthday Notifications] Нет сотрудников, пропускаем проверку');
+      return;
+    }
     
     const today = format(new Date(), 'yyyy-MM-dd');
     
-    // Если уже проверяли сегодня, пропускаем
+    // Если уже проверяли сегодня, пропускаем (но логируем для отладки)
     if (hasCheckedRef.current && lastCheckDateRef.current === today) {
+      console.log('[Birthday Notifications] Уже проверяли сегодня, пропускаем. Для повторной проверки обновите страницу.');
       return;
     }
     
@@ -155,9 +179,28 @@ export function useBirthdayNotifications(employees: Employee[]): void {
       const telegramToken = tokens.find(t => t.type === 'telegram');
       const slackToken = tokens.find(t => t.type === 'slack');
       
+      console.log('[Birthday Notifications] Интеграции:', {
+        telegramToken: telegramToken ? {
+          hasToken: !!telegramToken.token_encrypted,
+          hasWebhookUrl: !!telegramToken.webhook_url,
+          webhookUrl: telegramToken.webhook_url
+        } : null,
+        slackToken: slackToken ? {
+          hasWebhookUrl: !!slackToken.webhook_url
+        } : null
+      });
+      
       if (!telegramToken && !slackToken) {
-        // Нет настроенных интеграций, пропускаем
+        console.log('[Birthday Notifications] Нет настроенных интеграций, пропускаем');
         return;
+      }
+      
+      // Проверяем, что для Telegram есть и токен, и chat_id (webhook_url)
+      if (telegramToken && (!telegramToken.token_encrypted || !telegramToken.webhook_url)) {
+        console.warn('[Birthday Notifications] Telegram токен неполный:', {
+          hasToken: !!telegramToken.token_encrypted,
+          hasChatId: !!telegramToken.webhook_url
+        });
       }
       
       // Получаем дни рождения за 7 и 3 дня
@@ -185,6 +228,13 @@ export function useBirthdayNotifications(employees: Employee[]): void {
         // Отправляем в Telegram
         if (telegramToken && telegramToken.token_encrypted && telegramToken.webhook_url) {
           const message = formatTelegramUpcomingBirthday(emp, 7);
+          console.log('[Birthday Notifications] Отправка в Telegram:', {
+            employee: emp.full_name,
+            daysUntil: 7,
+            hasToken: !!telegramToken.token_encrypted,
+            chatId: telegramToken.webhook_url
+          });
+          
           const success = await sendTelegramNotification(
             telegramToken.token_encrypted,
             telegramToken.webhook_url,
@@ -192,11 +242,19 @@ export function useBirthdayNotifications(employees: Employee[]): void {
           );
           
           if (success) {
+            console.log('[Birthday Notifications] Успешно отправлено в Telegram для', emp.full_name);
             markNotificationSent(emp.id, 7, today);
             sentCount++;
             // Небольшая задержка между сообщениями
             await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            console.error('[Birthday Notifications] Ошибка отправки в Telegram для', emp.full_name);
           }
+        } else {
+          console.warn('[Birthday Notifications] Telegram не настроен или неполный:', {
+            hasToken: telegramToken ? !!telegramToken.token_encrypted : false,
+            hasChatId: telegramToken ? !!telegramToken.webhook_url : false
+          });
         }
         
         // Отправляем в Slack
@@ -225,6 +283,13 @@ export function useBirthdayNotifications(employees: Employee[]): void {
         // Отправляем в Telegram
         if (telegramToken && telegramToken.token_encrypted && telegramToken.webhook_url) {
           const message = formatTelegramUpcomingBirthday(emp, 3);
+          console.log('[Birthday Notifications] Отправка в Telegram:', {
+            employee: emp.full_name,
+            daysUntil: 3,
+            hasToken: !!telegramToken.token_encrypted,
+            chatId: telegramToken.webhook_url
+          });
+          
           const success = await sendTelegramNotification(
             telegramToken.token_encrypted,
             telegramToken.webhook_url,
@@ -232,11 +297,19 @@ export function useBirthdayNotifications(employees: Employee[]): void {
           );
           
           if (success) {
+            console.log('[Birthday Notifications] Успешно отправлено в Telegram для', emp.full_name);
             markNotificationSent(emp.id, 3, today);
             sentCount++;
             // Небольшая задержка между сообщениями
             await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            console.error('[Birthday Notifications] Ошибка отправки в Telegram для', emp.full_name);
           }
+        } else {
+          console.warn('[Birthday Notifications] Telegram не настроен или неполный:', {
+            hasToken: telegramToken ? !!telegramToken.token_encrypted : false,
+            hasChatId: telegramToken ? !!telegramToken.webhook_url : false
+          });
         }
         
         // Отправляем в Slack

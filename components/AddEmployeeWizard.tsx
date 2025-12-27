@@ -237,26 +237,26 @@ const AddEmployeeWizard: React.FC<AddEmployeeWizardProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-0 md:p-4">
+      <div className="bg-white rounded-none md:rounded-2xl shadow-2xl w-full h-full md:h-[90vh] md:max-w-4xl overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800">Добавление нового сотрудника</h2>
-            <p className="text-sm text-slate-500 mt-1">Шаг {currentStep} из {TOTAL_STEPS}</p>
+        <div className="px-4 md:px-6 py-3 md:py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
+          <div className="min-w-0 flex-1 pr-2">
+            <h2 className="text-lg md:text-2xl font-bold text-slate-800 truncate">Добавление нового сотрудника</h2>
+            <p className="text-xs md:text-sm text-slate-500 mt-0.5 md:mt-1">Шаг {currentStep} из {TOTAL_STEPS}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/50 rounded-lg transition-colors"
+            className="p-2 hover:bg-white/50 rounded-lg transition-colors flex-shrink-0"
             disabled={isSubmitting}
           >
-            <X size={24} className="text-slate-500" />
+            <X size={20} className="md:w-6 md:h-6 text-slate-500" />
           </button>
         </div>
 
         {/* Progress Bar */}
-        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200">
-          <div className="flex items-center gap-2">
+        <div className="px-3 md:px-6 py-2 md:py-3 bg-slate-50 border-b border-slate-200 overflow-x-auto flex-shrink-0">
+          <div className="flex items-center gap-1 md:gap-2 min-w-max">
             {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
               const stepNum = index + 1;
               const isCompleted = stepNum < currentStep;
@@ -264,9 +264,9 @@ const AddEmployeeWizard: React.FC<AddEmployeeWizardProps> = ({
               
               return (
                 <React.Fragment key={stepNum}>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 md:gap-2">
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                      className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center font-bold text-xs md:text-sm transition-all flex-shrink-0 ${
                         isCompleted
                           ? 'bg-green-500 text-white'
                           : isCurrent
@@ -274,11 +274,11 @@ const AddEmployeeWizard: React.FC<AddEmployeeWizardProps> = ({
                           : 'bg-slate-200 text-slate-500'
                       }`}
                     >
-                      {isCompleted ? <Check size={16} /> : stepNum}
+                      {isCompleted ? <Check size={12} className="md:w-4 md:h-4" /> : stepNum}
                     </div>
                     {stepNum < TOTAL_STEPS && (
                       <div
-                        className={`h-1 w-12 transition-all ${
+                        className={`h-1 w-6 md:w-12 transition-all flex-shrink-0 ${
                           isCompleted ? 'bg-green-500' : 'bg-slate-200'
                         }`}
                       />
@@ -291,7 +291,7 @@ const AddEmployeeWizard: React.FC<AddEmployeeWizardProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-3 md:p-6">
           {currentStep === 1 && (
             <Step1PostSelection
               wizardData={wizardData}

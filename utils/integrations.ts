@@ -197,6 +197,13 @@ export async function getAllIntegrationTokens(): Promise<IntegrationToken[]> {
       return [];
     }
 
+    debugLog('Загружены токены интеграций:', data?.map(t => ({
+      type: t.integration_type,
+      hasToken: !!t.token_encrypted,
+      hasWebhook: !!t.webhook_url,
+      webhookUrl: t.webhook_url
+    })) || []);
+
     return data || [];
   } catch (error) {
     logError('Неожиданная ошибка при получении токенов:', error);

@@ -157,3 +157,4 @@ ALTER TABLE onboarding_tasks ENABLE ROW LEVEL SECURITY;
 5. Обновите страницу (F5)
 
 
+

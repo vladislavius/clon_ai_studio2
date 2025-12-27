@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'; // Добавлен useCallback
 import { ORGANIZATION_STRUCTURE, ROLE_STAT_TEMPLATES, HANDBOOK_STATISTICS } from '../constants';
-import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon, Calendar, Info, HelpCircle, ArrowDownUp, AlertCircle, Phone, User, HeartPulse, File, Lock, DownloadCloud, Link2, Unlink, Sparkles, Copy, Edit2, Layers, Loader2, Minus, Wallet, CreditCard, Landmark, Globe, List, Check, FolderOpen } from 'lucide-react';
+import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon, Calendar, Info, HelpCircle, ArrowDownUp, AlertCircle, Phone, User, HeartPulse, File, Lock, DownloadCloud, Link2, Unlink, Sparkles, Copy, Edit2, Layers, Loader2, Minus, Wallet, CreditCard, Landmark, Globe, List, Check, FolderOpen, Clock } from 'lucide-react';
 import { Employee as EmployeeType, Attachment, EmergencyContact, StatisticDefinition, StatisticValue, WiseCondition } from '../types';
 import { supabase } from '../supabaseClient';
 import StatsChart from './StatsChart';
@@ -12,6 +12,8 @@ import { useToast } from './Toast';
 import { useErrorHandler } from '../utils/errorHandler';
 import { useSwipe } from '../hooks/useSwipe';
 import { validateFile, ALLOWED_IMAGE_TYPES, ALLOWED_DOCUMENT_TYPES, formatFileSize } from '../utils/fileValidation';
+import { TraineeCheckpoints } from './TraineeCheckpoints';
+import { getTraineeProgress } from '../utils/traineeTransition';
 
 interface EmployeeModalProps {
     isOpen: boolean;
@@ -133,6 +135,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
     // Stat Management State (Create/Assign)
     const [showStatManager, setShowStatManager] = useState(false);
     const [newStatData, setNewStatData] = useState({ title: '', description: '', inverted: false, is_double: false, calculation_method: '' });
+    
+    // Trainee Progress State
+    const [isTrainee, setIsTrainee] = useState(false);
 
     // Editing State
     const [editingStatId, setEditingStatId] = useState<string | null>(null);
@@ -161,6 +166,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                 });
                 if (isMounted) {
                     fetchPersonalStats(initialData.id);
+                    checkTraineeStatus(initialData);
                 }
             } else {
                 setFormData({ ...DEFAULT_EMPLOYEE, id: crypto.randomUUID(), created_at: new Date().toISOString() });
@@ -182,6 +188,16 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
             isMounted = false;
         };
     }, [isOpen, initialData?.id]);
+
+    const checkTraineeStatus = async (employee: EmployeeType) => {
+        try {
+            const progress = await getTraineeProgress(employee.id);
+            setIsTrainee(!!progress && progress.status === 'trainee');
+        } catch (error) {
+            // Игнорируем ошибки, просто не показываем вкладку
+            setIsTrainee(false);
+        }
+    };
 
     const fetchPersonalStats = async (empId: string) => {
         setIsLoadingStats(true);
@@ -747,8 +763,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                             { id: 'docs', label: '3. Документы', restricted: true },
                             { id: 'finance', label: '4. Финансы', restricted: true },
                             { id: 'files', label: '5. Файлы', restricted: true },
+                            { id: 'stats', label: '6. Статистика', icon: <TrendingUp size={14} />, restricted: false },
                             { id: 'hatfolder', label: '7. Шляпная папка', icon: <FolderOpen size={14} />, restricted: false },
-                            { id: 'stats', label: '6. Статистика', icon: <TrendingUp size={14} />, restricted: false }
+                            ...(isTrainee ? [{ id: 'trainee', label: '8. Чек-поинты стажера', icon: <Clock size={14} />, restricted: false }] : [])
                         ].map(tab => {
                             if (isReadOnly && tab.restricted) return null;
                             return (
@@ -1124,6 +1141,20 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                             )}
 
                             {/* TAB: STATS (VISIBLE TO ALL, EDITABLE BY ADMIN) */}
+                            {activeTab === 'trainee' && isTrainee && (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                                    <TraineeCheckpoints
+                                        employee={formData}
+                                        isAdmin={!isReadOnly}
+                                        onUpdate={() => {
+                                            checkTraineeStatus(formData);
+                                            if (initialData) {
+                                                fetchPersonalStats(initialData.id);
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            )}
                             {activeTab === 'stats' && (
                                 isNewEmployee ? (
                                     <div className="flex flex-col items-center justify-center h-64 text-center p-8 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 animate-in fade-in">

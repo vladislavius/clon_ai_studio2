@@ -38,3 +38,4 @@ export const TrendBadge: React.FC<TrendBadgeProps> = ({ trend, changePercent, si
   );
 };
 
+
