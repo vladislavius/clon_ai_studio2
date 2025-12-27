@@ -1,9 +1,15 @@
 import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import { ORGANIZATION_STRUCTURE } from '../constants';
-import { Employee, Department, SubDepartment } from '../types';
-import { User, X, Search, FileText, ChevronRight, Users, Crown, Target, Award, Copy, Check, MessageCircle, Phone, Hash, AlertTriangle, Zap, ChevronDown, ChevronUp, Edit2, Save, Trash2, Plus } from 'lucide-react';
+import { Employee, Department, SubDepartment, DepartmentSection, StatisticDefinition, StatisticValue } from '../types';
+import { User, X, Search, FileText, ChevronRight, Users, Crown, Target, Award, Copy, Check, MessageCircle, Phone, Hash, AlertTriangle, Zap, ChevronDown, ChevronUp, Edit2, Save, Trash2, Plus, BookOpen, TrendingUp, TrendingDown, BarChart3, Minus, Info } from 'lucide-react';
 import { useToast } from './Toast';
 import { useDebounce } from '../hooks/useDebounce';
+import { DepartmentDetailView } from './DepartmentDetailView';
+import { supabase } from '../supabaseClient';
+import StatsChart from './StatsChart';
+import { analyzeTrend, getFilteredValues } from '../utils/statistics';
+import { getAllStats } from '../features/api/mockAdminTechApi';
+import { PlanFactChart } from '../shared/components/PlanFactChart';
 
 interface OrgChartProps {
   employees: Employee[];
@@ -31,12 +37,41 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
   const toast = useToast();
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
   const [selectedSubDeptId, setSelectedSubDeptId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'classic' | 'detail'>('classic');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [statistics, setStatistics] = useState<Record<string, StatisticDefinition[]>>({});
+  const [statValues, setStatValues] = useState<Record<string, StatisticValue[]>>({});
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('3w');
+  const [expandedStatId, setExpandedStatId] = useState<string | null>(null);
+  const [planFactData, setPlanFactData] = useState<any>(null);
+  const [planFactLoading, setPlanFactLoading] = useState(false);
+  const [modalTab, setModalTab] = useState<'view' | 'create_program'>('view');
+  
+  // Функция для получения имени владельца статистики
+  const getOwnerName = (ownerId: string) => {
+    if (!ownerId) return 'Не указан';
+    for (const deptId in orgStructure) {
+      const dept = orgStructure[deptId];
+      if (deptId === ownerId) return dept.name;
+      if (dept.departments) {
+        for (const subId in dept.departments) {
+          if (subId === ownerId) return dept.departments[subId].name;
+          if (dept.departments[subId].sections) {
+            for (const secId in dept.departments[subId].sections) {
+              if (secId === ownerId) return dept.departments[subId].sections[secId].name;
+            }
+          }
+        }
+      }
+    }
+    return ownerId;
+  };
   
   // Debounce search term для оптимизации производительности
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -61,6 +96,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
     developmentActions?: string[];
     // SubDepartment fields
     code?: string;
+    employeeName?: string;
   }
   const [editBuffer, setEditBuffer] = useState<EditBuffer | null>(null);
   const [companyEditMode, setCompanyEditMode] = useState<'goal' | 'vfp' | null>(null);
@@ -70,6 +106,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
       setIsDescExpanded(false);
       setIsEditing(false);
       setEditBuffer(null);
+      setSelectedSectionId(null);
   }, [selectedDeptId, selectedSubDeptId]);
 
   useLayoutEffect(() => {
@@ -118,6 +155,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
               description: subDept.description || '',
               vfp: subDept.vfp || '',
               manager: subDept.manager || '',
+              employeeName: subDept.employeeName || '',
           });
       } else {
           setEditBuffer({ 
@@ -153,7 +191,8 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                   id: selectedSubDeptId,
                   name: editBuffer.name ?? '',
                   code: editBuffer.code ?? '',
-                  manager: editBuffer.manager ?? '',
+                  manager: (editBuffer.manager && editBuffer.manager.trim()) || '',
+                  employeeName: (editBuffer.employeeName && editBuffer.employeeName.trim()) || undefined,
                   description: editBuffer.description ?? '',
                   vfp: editBuffer.vfp ?? '',
               } as SubDepartment;
@@ -169,7 +208,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                   longDescription: editBuffer.longDescription !== undefined ? editBuffer.longDescription : (editBuffer.description !== undefined ? editBuffer.description : newStruct[selectedDeptId].longDescription),
                   vfp: editBuffer.vfp !== undefined ? editBuffer.vfp : newStruct[selectedDeptId].vfp,
                   goal: editBuffer.goal !== undefined ? editBuffer.goal : newStruct[selectedDeptId].goal,
-                  manager: editBuffer.manager !== undefined ? editBuffer.manager : newStruct[selectedDeptId].manager,
+                  manager: editBuffer.manager !== undefined ? (editBuffer.manager.trim() || '') : newStruct[selectedDeptId].manager,
                   mainStat: editBuffer.mainStat !== undefined ? editBuffer.mainStat : newStruct[selectedDeptId].mainStat,
                   functions: editBuffer.functions !== undefined ? editBuffer.functions : (newStruct[selectedDeptId].functions || []),
                   troubleSigns: editBuffer.troubleSigns !== undefined ? editBuffer.troubleSigns : (newStruct[selectedDeptId].troubleSigns || []),
@@ -242,6 +281,121 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
       });
     }
   }, [currentDept, selectedDeptId, selectedSubDeptId]);
+
+  // Загружаем статистики для текущего департамента/отдела/секции
+  useEffect(() => {
+    const loadStatistics = async () => {
+      try {
+        if (!supabase || !currentDept) return;
+
+        const entityIds: string[] = [currentDept.id];
+        if (selectedSubDeptId && currentDept.departments?.[selectedSubDeptId]) {
+          entityIds.push(selectedSubDeptId);
+          if (selectedSectionId && currentDept.departments[selectedSubDeptId].sections?.[selectedSectionId]) {
+            entityIds.push(selectedSectionId);
+          }
+        }
+
+        const { data: defs, error: defsError } = await supabase
+          .from('statistics_definitions')
+          .select('*')
+          .in('owner_id', entityIds)
+          .order('title');
+
+        if (defsError) {
+          console.warn('Ошибка загрузки статистик:', defsError);
+          return;
+        }
+
+        if (defs && defs.length > 0) {
+          // Группируем статистики по owner_id
+          const grouped: Record<string, StatisticDefinition[]> = {};
+          defs.forEach(stat => {
+            if (!grouped[stat.owner_id]) {
+              grouped[stat.owner_id] = [];
+            }
+            grouped[stat.owner_id].push(stat);
+          });
+          setStatistics(grouped);
+
+          // Загружаем значения
+          const statIds = defs.map(s => s.id);
+          const { data: values, error: valuesError } = await supabase
+            .from('statistics_values')
+            .select('*')
+            .in('definition_id', statIds)
+            .order('date', { ascending: true });
+
+          if (valuesError) {
+            console.warn('Ошибка загрузки значений статистик:', valuesError);
+            return;
+          }
+
+          const groupedValues: Record<string, StatisticValue[]> = {};
+          if (values) {
+            values.forEach(v => {
+              if (!groupedValues[v.definition_id]) {
+                groupedValues[v.definition_id] = [];
+              }
+              groupedValues[v.definition_id].push(v as StatisticValue);
+            });
+          }
+          setStatValues(groupedValues);
+        } else {
+          setStatistics({});
+          setStatValues({});
+        }
+      } catch (error) {
+        console.warn('Ошибка при загрузке статистик:', error);
+      }
+    };
+
+    if (isDrawerOpen && currentDept) {
+      loadStatistics();
+    }
+  }, [isDrawerOpen, currentDept, selectedSubDeptId, selectedSectionId]);
+
+  const renderStatCard = (stat: StatisticDefinition, deptColor: string) => {
+    const allVals = statValues[stat.id] || [];
+    const sortedVals = [...allVals].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const vals = getFilteredValues(sortedVals, selectedPeriod as any);
+    const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
+    const trendColorHex = isGood ? "#10b981" : "#f43f5e";
+
+    return (
+      <div 
+        key={stat.id} 
+        onClick={() => setExpandedStatId(stat.id)}
+        className="relative bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[180px] md:h-[210px] lg:h-[240px] transition-all group cursor-pointer hover:shadow-md hover:border-slate-300"
+      >
+        <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: deptColor }}></div>
+        <div className="p-3 md:p-4 flex flex-col h-full relative z-10">
+          <div className="flex justify-between items-start mb-1">
+            <div className="flex-1 pr-4">
+              <h3 className="text-[9px] md:text-[10px] font-black text-slate-800 uppercase leading-tight mb-0.5 line-clamp-2">{stat.title}</h3>
+              <div className="text-[8px] md:text-[9px] text-slate-400 font-medium line-clamp-2 min-h-[20px] leading-snug">{stat.description || 'Описание показателя отсутствует'}</div>
+            </div>
+            {stat.inverted && <span className="text-[7px] md:text-[8px] bg-purple-100 text-purple-700 px-1 rounded font-bold ml-1 flex-shrink-0">ОБР</span>}
+          </div>
+          <div className="flex items-baseline gap-1.5 md:gap-2 mb-1.5 md:mb-2">
+            <span className="text-base md:text-xl lg:text-2xl font-black text-slate-900">{current.toLocaleString()}</span>
+            {vals.length > 1 && (
+              <div className={`flex items-center gap-1 text-[9px] md:text-[10px] font-bold ${isGood ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {direction === 'up' && <TrendingUp size={9} className="md:w-[10px] md:h-[10px]" />}
+                {direction === 'down' && <TrendingDown size={9} className="md:w-[10px] md:h-[10px]" />}
+                {Math.abs(percent).toFixed(0)}%
+              </div>
+            )}
+          </div>
+          <div className="flex-1 w-full min-h-0 relative">
+            <StatsChart values={vals} color={trendColorHex} inverted={stat.inverted} isDouble={stat.is_double} />
+          </div>
+          {stat.is_favorite && <div className="absolute bottom-2 right-2 text-[8px] font-black text-amber-500 uppercase tracking-widest opacity-60">ГСД</div>}
+        </div>
+      </div>
+    );
+  };
+
   const ownerStruct = orgStructure['owner'];
   const directorName = orgStructure['dept7']?.departments?.['dept7_19']?.manager || "ИД";
 
@@ -316,10 +470,18 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                                         <span className="text-[6px] md:text-[7px] font-black uppercase text-slate-300 tracking-widest">DIV {sub.code}</span>
                                                         <ChevronRight size={7} className="md:w-2 md:h-2 text-slate-300 group-hover/item:text-slate-500 transition-colors"/>
                                                     </div>
-                                                    <div className="font-semibold md:font-bold text-slate-700 text-[9px] md:text-[11px] leading-snug mb-0.5 md:mb-1 group-hover/item:text-slate-900 break-words">{sub.name}</div>
-                                                    <div className="flex items-center justify-between border-t border-slate-50 pt-0.5 md:pt-1">
-                                                        <div className="flex items-center gap-0.5 md:gap-1 text-[7px] md:text-[8px] text-slate-400"><User size={7} className="md:w-2 md:h-2"/><span className="font-medium truncate max-w-[60px] md:max-w-[80px]">{sub.manager.split(' ')[0]}</span></div>
-                                                        <span className="text-[7px] md:text-[8px] font-bold bg-slate-100 text-slate-400 px-0.5 md:px-1 rounded-md">{employees.filter(e => e.subdepartment?.includes(sub.id)).length}</span>
+                                                    <div className="font-semibold md:font-bold text-slate-700 text-[9px] md:text-[11px] leading-snug mb-0.5 md:mb-1 group-hover/item:text-slate-900 break-words line-clamp-2">{sub.name}</div>
+                                                    <div className="flex items-center justify-between border-t border-slate-50 pt-0.5 md:pt-1 gap-1">
+                                                        <div className="flex items-center gap-0.5 md:gap-1 text-[7px] md:text-[8px] text-slate-600 min-w-0 flex-1">
+                                                            <User size={7} className="md:w-2 md:h-2 flex-shrink-0"/>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="font-medium truncate" title={sub.manager}>{sub.manager}</div>
+                                                                {sub.employeeName && (
+                                                                    <div className="text-[6px] md:text-[7px] text-slate-500 truncate" title={sub.employeeName}>{sub.employeeName}</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[7px] md:text-[8px] font-bold bg-slate-100 text-slate-400 px-0.5 md:px-1 rounded-md flex-shrink-0">{employees.filter(e => e.subdepartment?.includes(sub.id)).length}</span>
                                                     </div>
                                                 </div>
                                             ))}
@@ -378,13 +540,22 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                             </div>
                             <div className="min-w-0 flex-1">
                                 {isEditing ? (
-                                    <input value={editBuffer.fullName || editBuffer.name} onChange={e => setEditBuffer({...editBuffer, [editBuffer.fullName ? 'fullName' : 'name']: e.target.value})} className="w-full text-sm md:text-lg font-black text-slate-800 border-b-2 border-blue-500 outline-none" />
+                                    <input value={editBuffer.name || ''} onChange={e => setEditBuffer({...editBuffer, name: e.target.value})} className="w-full text-sm md:text-lg font-black text-slate-800 border-b-2 border-blue-500 outline-none" />
                                 ) : (
-                                    <h3 className="text-sm md:text-lg font-black text-slate-800 leading-tight break-words">{(selectedSubDeptId && currentDept.departments) ? currentDept.departments[selectedSubDeptId].name : currentDept.fullName}</h3>
+                                    <h3 className="text-sm md:text-lg font-black text-slate-800 leading-tight break-words">{(selectedSubDeptId && currentDept.departments) ? currentDept.departments[selectedSubDeptId].name : currentDept.name}</h3>
                                 )}
                             </div>
                         </div>
                         <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+                           {!isEditing && (
+                               <button 
+                                   onClick={() => setViewMode(viewMode === 'detail' ? 'classic' : 'detail')}
+                                   className="p-1.5 md:p-2 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors"
+                                   title={viewMode === 'detail' ? 'Классический вид' : 'Детальный вид'}
+                               >
+                                   <BookOpen size={16} className="md:w-5 md:h-5 text-slate-500"/>
+                               </button>
+                           )}
                            {isAdmin && (
                                isEditing ? (
                                    <button onClick={handleSaveEdit} className="p-1.5 md:p-2 bg-emerald-500 text-white rounded-full shadow-md"><Save size={16} className="md:w-5 md:h-5"/></button>
@@ -397,7 +568,103 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                     </div>
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 relative">
-                        <div className="bg-white p-4 md:p-6 border-b border-slate-100">
+                        {/* Detail View Mode */}
+                        {viewMode === 'detail' ? (
+                            <div className="p-4 md:p-6">
+                                {/* Navigation sidebar for departments and sections */}
+                                {!selectedSubDeptId && currentDept.departments && Object.keys(currentDept.departments).length > 0 && (
+                                    <div className="mb-6 bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                                        <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                            <Users className="text-slate-600" size={18} />
+                                            Отделы департамента
+                                        </h4>
+                                        <div className="space-y-2">
+                                            {Object.values(currentDept.departments).map((subDept) => (
+                                                <button
+                                                    key={subDept.id}
+                                                    onClick={() => {
+                                                        setSelectedSubDeptId(subDept.id);
+                                                        setSelectedSectionId(null);
+                                                    }}
+                                                    className={`w-full text-left p-3 rounded-lg border transition-all ${
+                                                        selectedSubDeptId === subDept.id
+                                                            ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex-1 min-w-0">
+                                                            <h5 className="font-semibold text-sm truncate">{subDept.name}</h5>
+                                                            {subDept.vfp && (
+                                                                <p className="text-xs text-slate-500 mt-1 truncate">ЦКП: {subDept.vfp}</p>
+                                                            )}
+                                                        </div>
+                                                        <ChevronRight size={16} className="flex-shrink-0 text-slate-400" />
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Navigation for sections within subdepartment */}
+                                {selectedSubDeptId && currentDept.departments?.[selectedSubDeptId]?.sections && Object.keys(currentDept.departments[selectedSubDeptId].sections!).length > 0 && (
+                                    <div className="mb-6 bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                                <BookOpen className="text-slate-600" size={18} />
+                                                Секции отдела
+                                            </h4>
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedSubDeptId(null);
+                                                    setSelectedSectionId(null);
+                                                }}
+                                                className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                                            >
+                                                ← Назад к отделам
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {Object.values(currentDept.departments[selectedSubDeptId].sections!).map((sec) => (
+                                                <button
+                                                    key={sec.id}
+                                                    onClick={() => setSelectedSectionId(sec.id)}
+                                                    className={`w-full text-left p-3 rounded-lg border transition-all ${
+                                                        selectedSectionId === sec.id
+                                                            ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                                                            : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex-1 min-w-0">
+                                                            <h5 className="font-semibold text-sm truncate">{sec.name}</h5>
+                                                            {sec.vfp && (
+                                                                <p className="text-xs text-slate-500 mt-1 truncate">ЦКП: {sec.vfp}</p>
+                                                            )}
+                                                        </div>
+                                                        <ChevronRight size={16} className="flex-shrink-0 text-slate-400" />
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <DepartmentDetailView
+                                    department={currentDept}
+                                    subDepartment={selectedSubDeptId && currentDept.departments ? currentDept.departments[selectedSubDeptId] : undefined}
+                                    section={selectedSectionId && selectedSubDeptId && currentDept.departments?.[selectedSubDeptId]?.sections?.[selectedSectionId]}
+                                    isAdmin={isAdmin}
+                                    onSave={(data) => {
+                                        // TODO: Implement save logic
+                                        console.log('Save data:', data);
+                                    }}
+                                />
+                            </div>
+                        ) : (
+                            /* Classic View Mode */
+                            <div className="bg-white p-4 md:p-6 border-b border-slate-100">
                              <div className="mb-4 md:mb-5">
                                  <h4 className="text-[9px] md:text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1.5 md:mb-2 flex items-center gap-1"><FileText size={9} className="md:w-[10px] md:h-[10px]"/> Описание</h4>
                                  {isEditing ? (
@@ -409,52 +676,228 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                      />
                                  ) : (
                                      <>
-                                         <div className={`text-xs md:text-sm text-slate-700 leading-relaxed font-medium transition-all ${isDescExpanded ? '' : 'line-clamp-3'}`}>
-                                             {isDescExpanded && currentDept.longDescription ? currentDept.longDescription : (selectedSubDeptId ? currentDept.departments![selectedSubDeptId].description : currentDept.description)}
-                                         </div>
-                                         {!selectedSubDeptId && currentDept.longDescription && (
-                                             <button onClick={() => setIsDescExpanded(!isDescExpanded)} className="mt-1.5 md:mt-2 text-[10px] md:text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">{isDescExpanded ? <>Свернуть <ChevronUp size={11} className="md:w-3 md:h-3"/></> : <>Читать полностью <ChevronDown size={11} className="md:w-3 md:h-3"/></>}</button>
-                                         )}
+                                         {(() => {
+                                             const descriptionText = selectedSubDeptId 
+                                                 ? currentDept.departments![selectedSubDeptId].description 
+                                                 : (currentDept.longDescription || currentDept.description || '');
+                                             // Увеличиваем лимит до 300 символов (примерно 5-6 строк текста)
+                                             const needsExpansion = descriptionText.length > 300;
+                                             
+                                             return (
+                                                 <>
+                                                     <div className={`text-xs md:text-sm text-slate-700 leading-relaxed font-medium transition-all ${isDescExpanded || !needsExpansion ? '' : 'line-clamp-5'}`}>
+                                                         {descriptionText}
+                                                     </div>
+                                                     {needsExpansion && (
+                                                         <button onClick={() => setIsDescExpanded(!isDescExpanded)} className="mt-1.5 md:mt-2 text-[10px] md:text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors">
+                                                             {isDescExpanded ? <>Свернуть <ChevronUp size={11} className="md:w-3 md:h-3"/></> : <>Читать полностью <ChevronDown size={11} className="md:w-3 md:h-3"/></>}
+                                                         </button>
+                                                     )}
+                                                 </>
+                                             );
+                                         })()}
                                      </>
                                  )}
                              </div>
 
-                             {isEditing && !selectedSubDeptId && (
+                             {/* Главная статистика для департамента */}
+                             {(isEditing || currentDept.mainStat || (isAdmin && !selectedSubDeptId)) && (
                                  <div className="mb-4 md:mb-5">
                                      <h4 className="text-[9px] md:text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Главная Статистика</h4>
-                                     <input 
-                                         value={editBuffer.mainStat ?? ''} 
-                                         onChange={e => setEditBuffer({...editBuffer, mainStat: e.target.value})} 
-                                         className="w-full text-xs md:text-sm font-bold p-2 border rounded-lg" 
-                                         placeholder="Введите главную статистику"
-                                     />
+                                     {isEditing ? (
+                                         <input 
+                                             value={editBuffer.mainStat ?? ''} 
+                                             onChange={e => setEditBuffer({...editBuffer, mainStat: e.target.value})} 
+                                             className="w-full text-xs md:text-sm font-bold p-2 border rounded-lg" 
+                                             placeholder="Введите главную статистику"
+                                         />
+                                     ) : currentDept.mainStat ? (
+                                         <div className="p-3 md:p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg md:rounded-xl border-2 border-blue-200 shadow-md">
+                                             <h4 className="text-[9px] md:text-[10px] uppercase font-black text-blue-500 tracking-widest mb-1.5 flex items-center gap-1">
+                                                 <TrendingUp size={10} className="md:w-3 md:h-3" />
+                                                 Главная Статистика
+                                             </h4>
+                                             <p className="text-xs md:text-sm font-bold text-blue-900">{currentDept.mainStat}</p>
+                                         </div>
+                                     ) : (
+                                         <div className="p-3 md:p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg md:rounded-xl border-2 border-blue-200 shadow-md">
+                                             <h4 className="text-[9px] md:text-[10px] uppercase font-black text-blue-500 tracking-widest mb-1.5 flex items-center gap-1">
+                                                 <TrendingUp size={10} className="md:w-3 md:h-3" />
+                                                 Главная Статистика
+                                             </h4>
+                                             <p className="text-xs md:text-sm text-slate-400 italic">Статистика не указана</p>
+                                         </div>
+                                     )}
                                  </div>
                              )}
 
-                             {!isEditing && !selectedSubDeptId && currentDept.mainStat && (
-                                 <div className="mb-4 md:mb-5 p-3 md:p-4 bg-blue-50 rounded-lg md:rounded-xl border border-blue-100">
-                                      <h4 className="text-[9px] md:text-[10px] uppercase font-black text-blue-400 tracking-widest mb-1.5">Главная Статистика</h4>
-                                      <p className="text-xs md:text-sm font-bold text-blue-900">{currentDept.mainStat}</p>
+                             {/* Главная статистика для отдела */}
+                             {selectedSubDeptId && (currentDept.departments?.[selectedSubDeptId]?.mainStat || (isAdmin && !selectedSectionId)) && (
+                                 <div className="mb-4 md:mb-5 p-3 md:p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg md:rounded-xl border-2 border-emerald-200 shadow-md">
+                                      <h4 className="text-[9px] md:text-[10px] uppercase font-black text-emerald-500 tracking-widest mb-1.5 flex items-center gap-1">
+                                          <TrendingUp size={10} className="md:w-3 md:h-3" />
+                                          Главная Статистика Отдела
+                                      </h4>
+                                      {currentDept.departments[selectedSubDeptId].mainStat ? (
+                                          <p className="text-xs md:text-sm font-bold text-emerald-900">{currentDept.departments[selectedSubDeptId].mainStat}</p>
+                                      ) : (
+                                          <p className="text-xs md:text-sm text-slate-400 italic">Статистика не указана</p>
+                                      )}
                                  </div>
                              )}
 
-                             {/* Functions List - Editable */}
-                             {(isEditing || (!selectedSubDeptId && currentDept.functions && currentDept.functions.length > 0)) && (
+                             {/* Главная статистика для секции */}
+                             {selectedSectionId && selectedSubDeptId && (currentDept.departments?.[selectedSubDeptId]?.sections?.[selectedSectionId]?.mainStat || isAdmin) && (
+                                 <div className="mb-4 md:mb-5 p-3 md:p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg md:rounded-xl border-2 border-purple-200 shadow-md">
+                                      <h4 className="text-[9px] md:text-[10px] uppercase font-black text-purple-500 tracking-widest mb-1.5 flex items-center gap-1">
+                                          <TrendingUp size={10} className="md:w-3 md:h-3" />
+                                          Главная Статистика Секции
+                                      </h4>
+                                      {currentDept.departments[selectedSubDeptId].sections![selectedSectionId].mainStat ? (
+                                          <p className="text-xs md:text-sm font-bold text-purple-900">{currentDept.departments[selectedSubDeptId].sections![selectedSectionId].mainStat}</p>
+                                      ) : (
+                                          <p className="text-xs md:text-sm text-slate-400 italic">Статистика не указана</p>
+                                      )}
+                                 </div>
+                             )}
+
+                             {/* Все статистики для департамента */}
+                             {!selectedSubDeptId && statistics[currentDept.id] && statistics[currentDept.id].length > 0 && (
                                  <div className="mb-4 md:mb-5">
-                                      <h4 className="text-[9px] md:text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1.5 md:mb-2 flex justify-between items-center">Основные функции {isEditing && <button onClick={() => setEditBuffer({...editBuffer, functions: [...(editBuffer.functions || []), "Новая функция"]})} className="text-blue-600"><Plus size={11} className="md:w-3 md:h-3"/></button>}</h4>
-                                      <ul className="space-y-1.5 md:space-y-2">
-                                          {(isEditing ? (editBuffer.functions || []) : currentDept.functions || []).map((fn: string, idx: number) => (
-                                              <li key={idx} className="text-[11px] md:text-xs text-slate-700 font-semibold flex items-start gap-1.5 md:gap-2 bg-slate-50 p-1.5 md:p-2 rounded-lg border border-slate-100 group">
-                                                  <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0"></div>
-                                                  {isEditing ? (
-                                                      <div className="flex-1 flex gap-1.5 md:gap-2">
-                                                          <input value={fn} onChange={e => { const newFns = [...editBuffer.functions]; newFns[idx] = e.target.value; setEditBuffer({...editBuffer, functions: newFns}); }} className="flex-1 bg-transparent outline-none text-[11px] md:text-xs" />
-                                                          <button onClick={() => setEditBuffer({...editBuffer, functions: editBuffer.functions.filter((_:any, i:number) => i !== idx)})} className="text-red-400"><Trash2 size={11} className="md:w-3 md:h-3"/></button>
-                                                      </div>
-                                                  ) : fn}
-                                              </li>
-                                          ))}
-                                      </ul>
+                                     <div className="flex items-center justify-between mb-2">
+                                         <h4 className="text-[9px] md:text-[10px] uppercase font-black text-slate-400 tracking-widest flex items-center gap-1">
+                                             <BarChart3 size={10} className="md:w-3 md:h-3" />
+                                             Все статистики департамента
+                                         </h4>
+                                         <select
+                                             value={selectedPeriod}
+                                             onChange={(e) => setSelectedPeriod(e.target.value)}
+                                             className="text-[8px] md:text-[9px] px-1.5 py-0.5 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                         >
+                                             <option value="1w">1 Нед.</option>
+                                             <option value="3w">3 Нед.</option>
+                                             <option value="1m">1 Мес.</option>
+                                             <option value="3m">3 Мес.</option>
+                                             <option value="6m">Полгода</option>
+                                             <option value="1y">Год</option>
+                                             <option value="all">Все</option>
+                                         </select>
+                                     </div>
+                                     <div className="overflow-x-auto custom-scrollbar -mx-2 px-2 pb-2">
+                                         <div className="flex gap-3 md:gap-4 min-w-max">
+                                             {statistics[currentDept.id].map(stat => (
+                                                 <div key={stat.id} className="flex-shrink-0 w-[240px] md:w-[260px] lg:w-[280px]">
+                                                     {renderStatCard(stat, currentDept.color)}
+                                                 </div>
+                                             ))}
+                                         </div>
+                                     </div>
+                                 </div>
+                             )}
+
+                             {/* Все статистики для отдела */}
+                             {selectedSubDeptId && !selectedSectionId && statistics[selectedSubDeptId] && statistics[selectedSubDeptId].length > 0 && (
+                                 <div className="mb-4 md:mb-5">
+                                     <div className="flex items-center justify-between mb-2">
+                                         <h4 className="text-[9px] md:text-[10px] uppercase font-black text-slate-400 tracking-widest flex items-center gap-1">
+                                             <BarChart3 size={10} className="md:w-3 md:h-3" />
+                                             Все статистики отдела
+                                         </h4>
+                                         <select
+                                             value={selectedPeriod}
+                                             onChange={(e) => setSelectedPeriod(e.target.value)}
+                                             className="text-[8px] md:text-[9px] px-1.5 py-0.5 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                         >
+                                             <option value="1w">1 Нед.</option>
+                                             <option value="3w">3 Нед.</option>
+                                             <option value="1m">1 Мес.</option>
+                                             <option value="3m">3 Мес.</option>
+                                             <option value="6m">Полгода</option>
+                                             <option value="1y">Год</option>
+                                             <option value="all">Все</option>
+                                         </select>
+                                     </div>
+                                     <div className="overflow-x-auto custom-scrollbar -mx-2 px-2 pb-2">
+                                         <div className="flex gap-3 md:gap-4 min-w-max">
+                                             {statistics[selectedSubDeptId].map(stat => (
+                                                 <div key={stat.id} className="flex-shrink-0 w-[240px] md:w-[260px] lg:w-[280px]">
+                                                     {renderStatCard(stat, currentDept.color)}
+                                                 </div>
+                                             ))}
+                                         </div>
+                                     </div>
+                                 </div>
+                             )}
+
+                             {/* Все статистики для секции */}
+                             {selectedSectionId && selectedSubDeptId && statistics[selectedSectionId] && statistics[selectedSectionId].length > 0 && (
+                                 <div className="mb-4 md:mb-5">
+                                     <div className="flex items-center justify-between mb-2">
+                                         <h4 className="text-[9px] md:text-[10px] uppercase font-black text-slate-400 tracking-widest flex items-center gap-1">
+                                             <BarChart3 size={10} className="md:w-3 md:h-3" />
+                                             Все статистики секции
+                                         </h4>
+                                         <select
+                                             value={selectedPeriod}
+                                             onChange={(e) => setSelectedPeriod(e.target.value)}
+                                             className="text-[8px] md:text-[9px] px-1.5 py-0.5 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                         >
+                                             <option value="1w">1 Нед.</option>
+                                             <option value="3w">3 Нед.</option>
+                                             <option value="1m">1 Мес.</option>
+                                             <option value="3m">3 Мес.</option>
+                                             <option value="6m">Полгода</option>
+                                             <option value="1y">Год</option>
+                                             <option value="all">Все</option>
+                                         </select>
+                                     </div>
+                                     <div className="overflow-x-auto custom-scrollbar -mx-2 px-2 pb-2">
+                                         <div className="flex gap-3 md:gap-4 min-w-max">
+                                             {statistics[selectedSectionId].map(stat => (
+                                                 <div key={stat.id} className="flex-shrink-0 w-[240px] md:w-[260px] lg:w-[280px]">
+                                                     {renderStatCard(stat, currentDept.color)}
+                                                 </div>
+                                             ))}
+                                         </div>
+                                     </div>
+                                 </div>
+                             )}
+
+                             {/* Functions List - Editable and View */}
+                             {!selectedSubDeptId && (isEditing || (currentDept.functions && currentDept.functions.length > 0)) && (
+                                 <div className="mb-4 md:mb-5">
+                                      <h4 className="text-[9px] md:text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1.5 md:mb-2 flex justify-between items-center">
+                                          <span>Основные функции</span>
+                                          {isEditing && (
+                                              <button onClick={() => setEditBuffer({...editBuffer, functions: [...(editBuffer.functions || []), "Новая функция"]})} className="text-blue-600 hover:text-blue-800 transition-colors">
+                                                  <Plus size={11} className="md:w-3 md:h-3"/>
+                                              </button>
+                                          )}
+                                      </h4>
+                                      {(() => {
+                                          const functionsToShow = isEditing ? (editBuffer.functions || []) : (currentDept.functions || []);
+                                          return functionsToShow.length > 0 ? (
+                                              <ul className="space-y-1.5 md:space-y-2">
+                                                  {functionsToShow.map((fn: string, idx: number) => (
+                                                      <li key={idx} className="text-[11px] md:text-xs text-slate-700 font-semibold flex items-start gap-1.5 md:gap-2 bg-slate-50 p-1.5 md:p-2 rounded-lg border border-slate-100 group">
+                                                          <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 flex-shrink-0"></div>
+                                                          {isEditing ? (
+                                                              <div className="flex-1 flex gap-1.5 md:gap-2">
+                                                                  <input value={fn} onChange={e => { const newFns = [...editBuffer.functions]; newFns[idx] = e.target.value; setEditBuffer({...editBuffer, functions: newFns}); }} className="flex-1 bg-transparent outline-none text-[11px] md:text-xs" />
+                                                                  <button onClick={() => setEditBuffer({...editBuffer, functions: editBuffer.functions.filter((_:any, i:number) => i !== idx)})} className="text-red-400 hover:text-red-600 transition-colors">
+                                                                      <Trash2 size={11} className="md:w-3 md:h-3"/>
+                                                                  </button>
+                                                              </div>
+                                                          ) : (
+                                                              <span>{fn}</span>
+                                                          )}
+                                                      </li>
+                                                  ))}
+                                              </ul>
+                                          ) : (
+                                              <div className="text-[11px] md:text-xs text-slate-400 italic p-2">Основные функции не указаны</div>
+                                          );
+                                      })()}
                                  </div>
                              )}
 
@@ -549,33 +992,93 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                  )}
                              </div>
 
-                             <div className="flex items-center gap-2 md:gap-3 p-2.5 md:p-3 rounded-lg md:rounded-xl border border-slate-200 bg-slate-50">
-                                 <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm"><User size={16} className="md:w-5 md:h-5"/></div>
-                                 <div className="flex-1">
-                                     <div className="text-[8px] md:text-[9px] uppercase font-bold text-slate-400 tracking-wider">Ответственный руководитель</div>
-                                     {isEditing ? (
-                                         <input 
-                                             value={editBuffer.manager ?? ''} 
-                                             onChange={e => setEditBuffer({...editBuffer, manager: e.target.value})} 
-                                             className="w-full text-xs md:text-sm font-bold border-b border-slate-300 bg-transparent outline-none" 
-                                             placeholder="Введите имя руководителя"
-                                         />
-                                     ) : (
-                                         <div className="text-xs md:text-sm font-bold text-slate-800">{selectedSubDeptId ? currentDept.departments![selectedSubDeptId].manager : currentDept.manager}</div>
-                                     )}
+                             <div className="space-y-3 md:space-y-4">
+                                 {/* Ответственный руководитель (должность) */}
+                                 <div className="flex items-center gap-2 md:gap-3 p-2.5 md:p-3 rounded-lg md:rounded-xl border border-slate-200 bg-slate-50">
+                                     <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm flex-shrink-0"><User size={16} className="md:w-5 md:h-5"/></div>
+                                     <div className="flex-1 min-w-0">
+                                         <div className="text-[8px] md:text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Ответственный руководитель</div>
+                                         {isEditing ? (
+                                             <div className="flex items-center gap-2">
+                                                 <input 
+                                                     value={editBuffer.manager ?? ''} 
+                                                     onChange={e => setEditBuffer({...editBuffer, manager: e.target.value})} 
+                                                     className="flex-1 text-xs md:text-sm font-bold border-b-2 border-blue-400 bg-transparent outline-none focus:border-blue-600 transition-colors" 
+                                                     placeholder="Введите должность (например: Менеджер)"
+                                                 />
+                                                 {editBuffer.manager && (
+                                                     <button 
+                                                         onClick={() => setEditBuffer({...editBuffer, manager: ''})} 
+                                                         className="p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
+                                                         title="Очистить"
+                                                     >
+                                                         <X size={14} className="md:w-4 md:h-4"/>
+                                                     </button>
+                                                 )}
+                                             </div>
+                                         ) : (
+                                             <div className="text-xs md:text-sm font-bold text-slate-800 break-words">
+                                                 {(() => {
+                                                     const managerName = selectedSubDeptId 
+                                                         ? currentDept.departments![selectedSubDeptId].manager 
+                                                         : currentDept.manager;
+                                                     return managerName && managerName.trim() ? managerName : (
+                                                         <span className="text-slate-400 italic">Не указан</span>
+                                                     );
+                                                 })()}
+                                             </div>
+                                         )}
+                                     </div>
                                  </div>
+
+                                 {/* Имя сотрудника (только для подотделов) */}
+                                 {selectedSubDeptId && (
+                                     <div className="flex items-center gap-2 md:gap-3 p-2.5 md:p-3 rounded-lg md:rounded-xl border border-slate-200 bg-blue-50/50">
+                                         <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white border border-blue-200 flex items-center justify-center text-blue-400 shadow-sm flex-shrink-0"><User size={16} className="md:w-5 md:h-5"/></div>
+                                         <div className="flex-1 min-w-0">
+                                             <div className="text-[8px] md:text-[9px] uppercase font-bold text-blue-500 tracking-wider mb-1">Имя сотрудника</div>
+                                             {isEditing ? (
+                                                 <div className="flex items-center gap-2">
+                                                     <input 
+                                                         value={editBuffer.employeeName ?? ''} 
+                                                         onChange={e => setEditBuffer({...editBuffer, employeeName: e.target.value})} 
+                                                         className="flex-1 text-xs md:text-sm font-bold border-b-2 border-blue-400 bg-transparent outline-none focus:border-blue-600 transition-colors" 
+                                                         placeholder="Введите имя сотрудника (необязательно)"
+                                                     />
+                                                     {editBuffer.employeeName && (
+                                                         <button 
+                                                             onClick={() => setEditBuffer({...editBuffer, employeeName: ''})} 
+                                                             className="p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
+                                                             title="Очистить"
+                                                         >
+                                                             <X size={14} className="md:w-4 md:h-4"/>
+                                                         </button>
+                                                     )}
+                                                 </div>
+                                             ) : (
+                                                 <div className="text-xs md:text-sm font-bold text-slate-800 break-words">
+                                                     {(() => {
+                                                         const employeeName = currentDept.departments![selectedSubDeptId].employeeName;
+                                                         return employeeName && employeeName.trim() ? employeeName : (
+                                                             <span className="text-slate-400 italic">Не указано</span>
+                                                         );
+                                                     })()}
+                                                 </div>
+                                             )}
+                                         </div>
+                                     </div>
+                                 )}
                              </div>
-                        </div>
 
-                        <div className="sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10 px-4 md:px-6 py-2 md:py-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0">
-                            <h4 className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5 md:gap-2"><Users size={11} className="md:w-3 md:h-3"/> Сотрудники ({filteredList.length})</h4>
-                            <div className="relative w-full sm:w-40">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 md:w-3 md:h-3" size={11}/>
-                                <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} type="text" placeholder="Поиск..." className="w-full pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-1 focus:ring-blue-300"/>
+                            <div className="sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10 px-4 md:px-6 py-2 md:py-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0">
+                                <h4 className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5 md:gap-2"><Users size={11} className="md:w-3 md:h-3"/> Сотрудники ({filteredList.length})</h4>
+                                <div className="relative w-full sm:w-40">
+                                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 md:w-3 md:h-3" size={11}/>
+                                    <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} type="text" placeholder="Поиск..." className="w-full pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs md:text-sm outline-none focus:ring-1 focus:ring-blue-300"/>
+                                </div>
                             </div>
-                        </div>
 
-                        <div className="p-3 md:p-4 space-y-2 md:space-y-3 pb-20 md:pb-20">
+                            <div className="p-3 md:p-4 space-y-2 md:space-y-3 pb-20 md:pb-20">
                             {filteredList.length === 0 ? (
                                 <div className="h-32 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl mx-2"><p className="font-medium text-xs">Нет сотрудников в этом отделе</p></div>
                             ) : (
@@ -635,11 +1138,84 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                     </div>
                                 ))
                             )}
+                            </div>
                         </div>
+                            )}
                     </div>
                 </div>
             </div>
         )}
+
+      {/* STAT MODAL */}
+      {expandedStatId && (() => {
+        const allStats = Object.values(statistics).flat();
+        const stat = allStats.find(s => s.id === expandedStatId);
+        if (!stat) return null;
+        const allVals = statValues[stat.id] || [];
+        const sortedVals = [...allVals].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const vals = getFilteredValues(sortedVals, selectedPeriod as any);
+        const { current, percent, direction, isGood } = analyzeTrend(vals, stat.inverted);
+        
+        return (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-2 md:p-6" onClick={() => setExpandedStatId(null)}>
+            <div className="bg-white rounded-3xl w-full max-w-6xl max-h-[95vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95 border border-slate-200" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="p-5 md:p-6 border-b border-slate-200 bg-white flex justify-between items-start gap-4 flex-shrink-0">
+                <div className="flex-1 min-w-0 pr-4">
+                  <h3 className="font-bold text-lg md:text-2xl text-slate-800 leading-tight break-words mb-2">{stat.title}</h3>
+                  <p className="text-xs md:text-sm text-slate-500 font-medium">{getOwnerName(stat.owner_id || '')}</p>
+                </div>
+                <button onClick={() => setExpandedStatId(null)} className="p-2.5 hover:bg-slate-100 rounded-xl flex-shrink-0 cursor-pointer transition-colors" title="Закрыть"><X size={20} /></button>
+              </div>
+              {/* Content */}
+              <div className="flex-1 p-5 md:p-8 bg-slate-50 overflow-y-auto custom-scrollbar min-h-0">
+                <div className="space-y-6 max-w-5xl mx-auto">
+                  {/* Description Card */}
+                  <div className="p-5 md:p-6 bg-blue-50 border border-blue-200 rounded-2xl shadow-sm">
+                    <h4 className="text-xs font-bold text-blue-600 uppercase tracking-widest flex items-center gap-2 mb-3"><Info size={14} /> Справка</h4>
+                    <p className="text-sm md:text-base font-medium text-blue-900 leading-relaxed whitespace-pre-wrap">{stat.description || 'Описание отсутствует.'}</p>
+                  </div>
+                  {/* Stats Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+                    <div className="p-5 md:p-6 bg-white rounded-2xl shadow-md border border-slate-200">
+                      <div className="text-xs text-slate-500 font-bold uppercase mb-2 tracking-wider">Текущее значение</div>
+                      <div className="text-3xl md:text-4xl font-black text-slate-900">{current.toLocaleString()}</div>
+                    </div>
+                    <div className="p-5 md:p-6 bg-white rounded-2xl shadow-md border border-slate-200">
+                      <div className="text-xs text-slate-500 font-bold uppercase mb-2 tracking-wider">Динамика периода</div>
+                      <div className={`text-2xl md:text-3xl font-bold flex items-center gap-2 ${isGood ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {direction === 'up' ? <TrendingUp size={28} /> : (direction === 'down' ? <TrendingDown size={28} /> : <Minus size={28} />)}
+                        {Math.abs(percent).toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                  {/* Chart */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 md:p-6">
+                    <div className="text-xs text-slate-500 font-bold uppercase mb-3 tracking-wider">График динамики</div>
+                    <div className="h-72 md:h-96 lg:h-[450px] w-full">
+                      <StatsChart values={vals} inverted={stat.inverted} isDouble={stat.is_double} />
+                    </div>
+                  </div>
+                  {/* Plan/Fact Chart */}
+                  {planFactData && !planFactLoading && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 md:p-6">
+                      <div className="text-xs text-slate-500 font-bold uppercase mb-3 tracking-wider">График План/Факт</div>
+                      <div className="h-72 md:h-96 w-full flex items-center justify-center overflow-x-auto">
+                        <PlanFactChart
+                          planData={Array(planFactData.history.length).fill(planFactData.plan)}
+                          factData={planFactData.history}
+                          width={Math.max(800, planFactData.history.length * 60)}
+                          height={300}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

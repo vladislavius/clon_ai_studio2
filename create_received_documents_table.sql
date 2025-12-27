@@ -111,3 +111,4 @@ COMMENT ON COLUMN received_documents.approvals IS 'JSONB массив одобр
 COMMENT ON COLUMN received_documents.tags IS 'Массив тегов для поиска и категоризации';
 
 
+

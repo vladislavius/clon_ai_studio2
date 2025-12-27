@@ -4,7 +4,7 @@ import { StatisticDefinition, StatisticValue, WiseCondition, Employee } from '..
 import { ORGANIZATION_STRUCTURE, HANDBOOK_STATISTICS } from '../constants';
 import StatsChart from './StatsChart';
 import ConfirmationModal from './ConfirmationModal';
-import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet, Target, Award, Crown, FileText, BarChart3, FileText as FileTextIcon, CheckCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, LayoutDashboard, Info, HelpCircle, Building2, Layers, Calendar, Edit2, X, List, Search, Plus, Trash2, Sliders, Save, AlertCircle, ArrowDownUp, Download, Upload, Maximize2, MoreHorizontal, Minus, ChevronDown, ChevronUp, FileSpreadsheet, Target, Award, Crown, FileText, BarChart3, FileText as FileTextIcon, CheckCircle, User } from 'lucide-react';
 import { format, startOfWeek } from 'date-fns';
 import { exportStatisticsToCSV, exportStatisticsToExcel, exportStatisticsWeekly } from '../utils/exportUtils';
 import { analyzeTrend, getFilteredValues } from '../utils/statistics';
@@ -16,6 +16,8 @@ import { PlanFactChart } from '../shared/components/PlanFactChart';
 import { TrendBadge } from '../shared/components/TrendBadge';
 import { getConditionColor, getConditionLabel } from '../shared/utils/statCalculations';
 import { ProgramCreator, Program } from './ProgramCreator';
+import { PersonalStatsView } from './PersonalStatsView';
+import { useAuth } from '../hooks/useAuth';
 
 interface StatisticsTabProps {
   employees: Employee[];
@@ -57,7 +59,9 @@ const PERIODS = [
 const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, selectedDeptId, isAdmin }) => {
   const toast = useToast();
   const { handleError } = useErrorHandler();
+  const { session } = useAuth();
 
+  const [viewMode, setViewMode] = useState<'department' | 'personal'>('department');
   const [definitions, setDefinitions] = useState<StatisticDefinition[]>([]);
   const [allLatestValues, setAllLatestValues] = useState<Record<string, StatisticValue[]>>({});
   const [selectedPeriod, setSelectedPeriod] = useState<string>('3w');
@@ -91,17 +95,28 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
     statId: string | null;
   }>({ isOpen: false, title: '', message: '', statId: null });
 
+  // Получаем ID текущего пользователя
+  const currentUserId = session?.user?.id;
+  const currentEmployee = employees.find(e => e.id === currentUserId);
+
+  // Если режим "Мои статистики" и нет пользователя, переключаемся на дашборд отдела
   useEffect(() => {
-    // Загружаем данные
-    if (isOffline) {
-      fetchDefinitions();
-      fetchAllValues();
-    } else {
-      // console.time('StatsFetch');
-      Promise.all([fetchDefinitions(), fetchAllValues()])
-      // .finally(() => console.timeEnd('StatsFetch'));
+    if (viewMode === 'personal' && !currentUserId) {
+      setViewMode('department');
     }
-  }, [isOffline]);
+  }, [viewMode, currentUserId]);
+
+  useEffect(() => {
+    // Загружаем данные только для дашборда отдела
+    if (viewMode === 'department') {
+      if (isOffline) {
+        fetchDefinitions();
+        fetchAllValues();
+      } else {
+        Promise.all([fetchDefinitions(), fetchAllValues()]);
+      }
+    }
+  }, [isOffline, viewMode]);
 
   // Вычисляем план/факт для всех статистик с учетом периода (используем useMemo вместо useEffect)
   const computedPlanFactMap = useMemo(() => {
@@ -1104,98 +1119,157 @@ const StatisticsTab: React.FC<StatisticsTabProps> = ({ employees, isOffline, sel
 
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in space-y-4">
-      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3 flex-shrink-0">
-        <div className="flex justify-between items-center">
-          <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
-            <button onClick={() => setDisplayMode('dashboard')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'dashboard' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><LayoutDashboard size={16} /> Дашборд</button>
-            <button onClick={() => setDisplayMode('list')} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${displayMode === 'list' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}><List size={16} /> Список</button>
+    <div className="flex flex-col h-full animate-in fade-in space-y-2 md:space-y-4">
+      <div className="bg-white p-2 md:p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2 md:gap-3 flex-shrink-0">
+        <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2 md:gap-0">
+          <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-full md:w-auto">
+            {/* Переключатель между дашбордом отдела и личными статистиками */}
+            <button
+              onClick={() => setViewMode('department')}
+              className={`flex-1 md:flex-none px-3 md:px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 md:gap-2 ${
+                viewMode === 'department'
+                  ? 'bg-white shadow text-blue-600'
+                  : 'text-slate-500'
+              }`}
+            >
+              <Building2 size={14} className="md:w-4 md:h-4" /> 
+              <span className="hidden sm:inline">Дашборд</span>
+              <span className="sm:hidden">Даш</span>
+            </button>
+            {currentUserId && (
+              <button
+                onClick={() => setViewMode('personal')}
+                className={`flex-1 md:flex-none px-3 md:px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 md:gap-2 ${
+                  viewMode === 'personal'
+                    ? 'bg-white shadow text-emerald-600'
+                    : 'text-slate-500'
+                }`}
+              >
+                <User size={14} className="md:w-4 md:h-4" /> 
+                <span className="hidden sm:inline">Мои статистики</span>
+                <span className="sm:hidden">Мои</span>
+              </button>
+            )}
           </div>
-          {isAdmin && (
-            <div className="flex items-center gap-2">
+          {viewMode === 'department' && (
+            <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-full md:w-auto">
+              <button onClick={() => setDisplayMode('dashboard')} className={`flex-1 md:flex-none px-3 md:px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 md:gap-2 ${displayMode === 'dashboard' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>
+                <LayoutDashboard size={14} className="md:w-4 md:h-4" /> 
+                <span className="hidden sm:inline">Дашборд</span>
+                <span className="sm:hidden">Даш</span>
+              </button>
+              <button onClick={() => setDisplayMode('list')} className={`flex-1 md:flex-none px-3 md:px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 md:gap-2 ${displayMode === 'list' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>
+                <List size={14} className="md:w-4 md:h-4" /> 
+                <span className="hidden sm:inline">Список</span>
+                <span className="sm:hidden">Спис</span>
+              </button>
+            </div>
+          )}
+          {viewMode === 'department' && isAdmin && (
+            <div className="flex items-center gap-1 md:gap-2 overflow-x-auto custom-scrollbar pb-1 -mx-1 px-1 touch-pan-x">
               <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" accept=".csv" />
-              <button onClick={() => fileInputRef.current?.click()} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer" title="Импорт CSV"><Upload size={18} /></button>
-              <button onClick={handleExportStats} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 cursor-pointer" title="Экспорт CSV (Краткий)"><Download size={18} /></button>
-              <button onClick={handleExportExcel} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 cursor-pointer" title="Экспорт Excel (Детальный)"><FileText size={18} /></button>
-              <button onClick={handleExportWeekly} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer" title="Экспорт недельных данных (Шаблон)"><FileSpreadsheet size={18} /></button>
-              <button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-lg border transition-all cursor-pointer ${isEditMode ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`} title="Конструктор (Редактирование)"><Edit2 size={18} /></button>
+              <button onClick={() => fileInputRef.current?.click()} className="p-1.5 md:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer flex-shrink-0" title="Импорт CSV"><Upload size={14} className="md:w-[18px] md:h-[18px]" /></button>
+              <button onClick={handleExportStats} className="p-1.5 md:p-2 text-slate-600 hover:bg-slate-50 rounded-lg border border-slate-200 cursor-pointer flex-shrink-0" title="Экспорт CSV (Краткий)"><Download size={14} className="md:w-[18px] md:h-[18px]" /></button>
+              <button onClick={handleExportExcel} className="p-1.5 md:p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 cursor-pointer flex-shrink-0" title="Экспорт Excel (Детальный)"><FileText size={14} className="md:w-[18px] md:h-[18px]" /></button>
+              <button onClick={handleExportWeekly} className="p-1.5 md:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer flex-shrink-0" title="Экспорт недельных данных (Шаблон)"><FileSpreadsheet size={14} className="md:w-[18px] md:h-[18px]" /></button>
+              <button onClick={() => setIsEditMode(!isEditMode)} className={`p-1.5 md:p-2 rounded-lg border transition-all cursor-pointer flex-shrink-0 ${isEditMode ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`} title="Конструктор (Редактирование)"><Edit2 size={14} className="md:w-[18px] md:h-[18px]" /></button>
             </div>
           )}
         </div>
-        {displayMode === 'dashboard' && (
-          <div className="flex items-center gap-2 mb-3">
+        {viewMode === 'department' && displayMode === 'dashboard' && (
+          <div className="flex items-center gap-1.5 md:gap-2 overflow-x-auto custom-scrollbar pb-1 -mx-1 px-1 touch-pan-x mb-2 md:mb-3">
             <button
               onClick={() => {
                 setTrendFilter('all');
                 setPlanFilter('all');
               }}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'all' && planFilter === 'all' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}
+              className={`flex-shrink-0 px-2.5 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1 ${trendFilter === 'all' && planFilter === 'all' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}
             >
-              Все
-              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${trendFilter === 'all' && planFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+              <span className="whitespace-nowrap">Все</span>
+              <span className={`ml-0.5 md:ml-1 px-1 md:px-1.5 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold ${trendFilter === 'all' && planFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
                 {getLastWeekStats.totalCount}
               </span>
             </button>
             <button
               onClick={() => setTrendFilter('growing')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'growing' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'}`}
+              className={`flex-shrink-0 px-2.5 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1 ${trendFilter === 'growing' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'}`}
             >
-              <TrendingUp size={14} /> Растущие
-              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${trendFilter === 'growing' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+              <TrendingUp size={11} className="md:w-[14px] md:h-[14px] flex-shrink-0" /> 
+              <span className="hidden sm:inline whitespace-nowrap">Растущие</span>
+              <span className="sm:hidden">↑</span>
+              <span className={`ml-0.5 md:ml-1 px-1 md:px-1.5 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold ${trendFilter === 'growing' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
                 {getLastWeekStats.growingCount}
               </span>
             </button>
             <button
               onClick={() => setTrendFilter('declining')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${trendFilter === 'declining' ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-white text-rose-600 border-rose-200 hover:border-rose-300'}`}
+              className={`flex-shrink-0 px-2.5 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1 ${trendFilter === 'declining' ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-white text-rose-600 border-rose-200 hover:border-rose-300'}`}
             >
-              <TrendingDown size={14} /> Падающие
-              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${trendFilter === 'declining' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'}`}>
+              <TrendingDown size={11} className="md:w-[14px] md:h-[14px] flex-shrink-0" /> 
+              <span className="hidden sm:inline whitespace-nowrap">Падающие</span>
+              <span className="sm:hidden">↓</span>
+              <span className={`ml-0.5 md:ml-1 px-1 md:px-1.5 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold ${trendFilter === 'declining' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'}`}>
                 {getLastWeekStats.decliningCount}
               </span>
             </button>
             <button
               onClick={() => setPlanFilter('achieved')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${planFilter === 'achieved' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'}`}
+              className={`flex-shrink-0 px-2.5 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1 ${planFilter === 'achieved' ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white text-emerald-600 border-emerald-200 hover:border-emerald-300'}`}
             >
-              <CheckCircle size={14} /> Достиг план
-              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${planFilter === 'achieved' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
+              <CheckCircle size={11} className="md:w-[14px] md:h-[14px] flex-shrink-0" /> 
+              <span className="hidden sm:inline whitespace-nowrap">Достиг план</span>
+              <span className="sm:hidden">✓</span>
+              <span className={`ml-0.5 md:ml-1 px-1 md:px-1.5 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold ${planFilter === 'achieved' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'}`}>
                 {getLastWeekStats.achievedPlanCount}
               </span>
             </button>
             <button
               onClick={() => setPlanFilter('not_achieved')}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 ${planFilter === 'not_achieved' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-white text-amber-600 border-amber-200 hover:border-amber-300'}`}
+              className={`flex-shrink-0 px-2.5 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all border cursor-pointer flex items-center gap-1 ${planFilter === 'not_achieved' ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-white text-amber-600 border-amber-200 hover:border-amber-300'}`}
             >
-              <AlertCircle size={14} /> Не достиг
-              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${planFilter === 'not_achieved' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'}`}>
+              <AlertCircle size={11} className="md:w-[14px] md:h-[14px] flex-shrink-0" /> 
+              <span className="hidden sm:inline whitespace-nowrap">Не достиг</span>
+              <span className="sm:hidden">!</span>
+              <span className={`ml-0.5 md:ml-1 px-1 md:px-1.5 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold ${planFilter === 'not_achieved' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'}`}>
                 {getLastWeekStats.notAchievedPlanCount}
               </span>
             </button>
-            {(planFilter !== 'all') && (
+            {(planFilter !== 'all' || trendFilter !== 'all') && (
               <button
                 onClick={() => {
                   setPlanFilter('all');
                   setTrendFilter('all');
                 }}
-                className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 rounded-lg border border-slate-200 hover:border-slate-300"
+                className="flex-shrink-0 px-2.5 md:px-3 py-1.5 md:py-2 text-[10px] md:text-xs font-bold text-slate-500 hover:text-slate-700 rounded-lg border border-slate-200 hover:border-slate-300"
                 title="Сбросить все фильтры"
               >
-                <X size={14} />
+                <X size={12} className="md:w-[14px] md:h-[14px]" />
               </button>
             )}
           </div>
         )}
-        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mx-1 px-1 touch-pan-x">
-          {PERIODS.map(p => (
-            <button key={p.id} onClick={() => setSelectedPeriod(p.id)} className={`flex-shrink-0 px-4 py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer ${selectedPeriod === p.id ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}>{p.label}</button>
-          ))}
-        </div>
+        {viewMode === 'department' && (
+          <div className="flex items-center gap-1.5 md:gap-2 overflow-x-auto custom-scrollbar pb-1 -mx-1 px-1 touch-pan-x">
+            {PERIODS.map(p => (
+              <button key={p.id} onClick={() => setSelectedPeriod(p.id)} className={`flex-shrink-0 px-2.5 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all border cursor-pointer whitespace-nowrap ${selectedPeriod === p.id ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}>{p.label}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar px-1">
-        {displayMode === 'dashboard' && renderDashboardView()}
-        {displayMode === 'list' && renderListView()}
+        {viewMode === 'personal' && currentUserId ? (
+          <PersonalStatsView
+            employeeId={currentUserId}
+            employeeName={currentEmployee?.full_name}
+            isReadOnly={!isAdmin}
+          />
+        ) : (
+          <>
+            {displayMode === 'dashboard' && renderDashboardView()}
+            {displayMode === 'list' && renderListView()}
+          </>
+        )}
       </div>
 
       {/* STAT MODAL */}

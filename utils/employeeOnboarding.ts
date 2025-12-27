@@ -6,6 +6,7 @@
 import { Employee, EmployeeWizardData, HatFile, HatFileBasicData } from '../types';
 import { supabase } from '../supabaseClient';
 import { ORGANIZATION_STRUCTURE } from '../constants';
+import { initializeTraineeProgress } from './traineeTransition';
 
 /**
  * Создает Шляпную папку для нового сотрудника
@@ -440,6 +441,11 @@ export async function executeAutomaticActions(
     // 5. Планируем welcome-письмо
     if (wizardData.start_date) {
       scheduleWelcomeEmail(employee, wizardData.start_date);
+    }
+
+    // 6. Инициализируем прогресс стажера (если статус = trainee)
+    if (wizardData.status === 'trainee' && wizardData.start_date) {
+      await initializeTraineeProgress(employee.id, wizardData.start_date);
     }
   } catch (error) {
     console.error('Ошибка при выполнении автоматических действий:', error);

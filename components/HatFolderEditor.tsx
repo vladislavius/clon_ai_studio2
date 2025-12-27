@@ -293,64 +293,66 @@ const HatFolderEditor: React.FC<HatFolderEditorProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col border border-slate-200/50 overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-0 md:p-4">
+      <div className="bg-white rounded-none md:rounded-3xl shadow-2xl w-full h-full md:h-[90vh] md:max-w-6xl flex flex-col border border-slate-200/50 overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-orange-50 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl shadow-lg">
-              <FolderOpen className="text-white" size={24} />
+        <div className="p-3 md:p-6 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-orange-50 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-0 flex-shrink-0">
+          <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+            <div className="p-2 md:p-3 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg md:rounded-xl shadow-lg flex-shrink-0">
+              <FolderOpen className="text-white" size={20} />
             </div>
-            <div>
-              <h2 className="text-2xl font-black text-slate-800">Шляпная папка</h2>
-              <p className="text-sm text-slate-600 mt-1">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg md:text-2xl font-black text-slate-800 truncate">Шляпная папка</h2>
+              <p className="text-xs md:text-sm text-slate-600 mt-0.5 md:mt-1 truncate">
                 {postName} • {employeeName}
               </p>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="h-2 bg-slate-200 rounded-full w-48 overflow-hidden">
+              <div className="mt-1.5 md:mt-2 flex items-center gap-2">
+                <div className="h-1.5 md:h-2 bg-slate-200 rounded-full flex-1 md:w-48 overflow-hidden">
                   <div 
                     className="h-full bg-gradient-to-r from-amber-500 to-orange-600 transition-all duration-300"
                     style={{ width: `${hatFile.completion_percentage}%` }}
                   />
                 </div>
-                <span className="text-xs font-bold text-slate-700">
+                <span className="text-xs font-bold text-slate-700 whitespace-nowrap">
                   {hatFile.completion_percentage}%
                 </span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full md:w-auto">
             <button
               onClick={saveHatFile}
               disabled={isSaving}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              className="flex-1 md:flex-none px-3 md:px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 text-sm md:text-base"
             >
               {isSaving ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Сохранение...
+                  <span className="hidden md:inline">Сохранение...</span>
+                  <span className="md:hidden">...</span>
                 </>
               ) : (
                 <>
                   <Save size={18} />
-                  Сохранить
+                  <span className="hidden md:inline">Сохранить</span>
+                  <span className="md:hidden">Сохранить</span>
                 </>
               )}
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white/80 rounded-xl transition-all"
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white/80 rounded-xl transition-all flex-shrink-0"
             >
-              <X size={24} />
+              <X size={20} />
             </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
           {/* Sidebar Navigation */}
-          <div className="w-72 bg-white border-r border-slate-200 overflow-y-auto flex-shrink-0 shadow-sm">
-            <nav className="p-3 space-y-1">
+          <div className="w-full md:w-72 bg-white border-b md:border-b-0 md:border-r border-slate-200 overflow-x-auto md:overflow-y-auto flex-shrink-0 shadow-sm md:shadow-none">
+            <nav className="p-2 md:p-3 space-y-1 flex md:flex-col flex-row gap-1 md:gap-0">
               {[
                 { id: 'content', label: '1. Содержание', icon: FileText, color: 'blue' },
                 { id: 'responsibilities', label: '2. Описание обязанностей', icon: List, color: 'green' },
@@ -387,10 +389,10 @@ const HatFolderEditor: React.FC<HatFolderEditorProps> = ({
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id as any)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                    className={`flex-shrink-0 md:w-full flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg transition-all duration-200 ${
                       isActive
-                        ? `${activeStyles.bg} ${activeStyles.text} font-semibold border-l-4 ${activeStyles.border} shadow-sm`
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-4 border-transparent'
+                        ? `${activeStyles.bg} ${activeStyles.text} font-semibold border-l-4 md:border-l-4 border-t md:border-t-0 ${activeStyles.border} shadow-sm`
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-4 md:border-l-4 border-t md:border-t-0 border-transparent'
                     }`}
                     style={{
                       minHeight: '44px', // Фиксированная высота для предотвращения "пляски" текста
@@ -401,7 +403,7 @@ const HatFolderEditor: React.FC<HatFolderEditorProps> = ({
                       className={`flex-shrink-0 ${isActive ? '' : 'opacity-70'}`}
                       style={{ width: '18px', height: '18px' }} // Фиксированный размер иконки
                     />
-                    <span className="text-sm leading-tight whitespace-nowrap overflow-hidden text-ellipsis">
+                    <span className="text-xs md:text-sm leading-tight whitespace-nowrap overflow-hidden text-ellipsis">
                       {section.label}
                     </span>
                   </button>
@@ -411,7 +413,7 @@ const HatFolderEditor: React.FC<HatFolderEditorProps> = ({
           </div>
 
           {/* Main Content Area */}
-          <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+          <div className="flex-1 overflow-y-auto p-3 md:p-6 bg-slate-50">
             {activeSection === 'content' && (
               <Section1Content 
                 hatFile={hatFile}

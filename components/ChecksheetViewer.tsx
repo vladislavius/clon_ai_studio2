@@ -39,6 +39,7 @@ const ChecksheetViewer: React.FC<ChecksheetViewerProps> = ({
   const [localChecksheet, setLocalChecksheet] = useState<HatFileChecksheet>(checksheet);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [submissionContent, setSubmissionContent] = useState('');
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const hatFile = hatFileProp; // Для доступа к basic_data
 
@@ -115,16 +116,53 @@ const ChecksheetViewer: React.FC<ChecksheetViewerProps> = ({
   };
 
   const handleSubmitItem = async (itemId: string) => {
-    if (!submissionContent.trim()) {
-      toast.error('Введите содержимое задания');
+    const item = localChecksheet.items.find(i => i.id === itemId);
+    if (!item) return;
+
+    // Для эссе и зарисовок требуется либо текст, либо файл
+    if ((item.type === 'essay' || item.type === 'sketch') && !submissionContent.trim() && !submissionFile) {
+      toast.error('Введите содержимое задания или загрузите файл');
       return;
+    }
+
+    let fileUrl: string | undefined;
+    let fileName: string | undefined;
+
+    // Загружаем файл, если он есть
+    if (submissionFile && supabase) {
+      try {
+        const fileExt = submissionFile.name.split('.').pop();
+        const fileNameWithId = `${itemId}-${Date.now()}.${fileExt}`;
+        const filePath = `checksheet-submissions/${employeeId}/${fileNameWithId}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('employee-files')
+          .upload(filePath, submissionFile);
+
+        if (uploadError) {
+          console.error('Ошибка загрузки файла:', uploadError);
+          toast.error('Ошибка загрузки файла');
+        } else {
+          const { data: urlData } = supabase.storage
+            .from('employee-files')
+            .getPublicUrl(filePath);
+          
+          fileUrl = urlData.publicUrl;
+          fileName = submissionFile.name;
+        }
+      } catch (error) {
+        console.error('Ошибка при загрузке файла:', error);
+        toast.error('Ошибка при загрузке файла');
+      }
     }
 
     const submission: ChecksheetItemSubmission = {
       id: crypto.randomUUID(),
       item_id: itemId,
-      type: 'essay',
-      content: submissionContent,
+      type: item.type === 'essay' ? 'essay' : item.type === 'sketch' ? 'sketch' : 'text',
+      content: submissionContent.trim() || undefined,
+      file_url: fileUrl,
+      file_name: fileName,
       submitted_at: new Date().toISOString(),
       submitted_by: employeeId,
     };
@@ -135,6 +173,7 @@ const ChecksheetViewer: React.FC<ChecksheetViewerProps> = ({
     });
 
     setSubmissionContent('');
+    setSubmissionFile(null);
     setEditingItemId(null);
     toast.success('Задание отправлено на проверку');
   };
@@ -564,6 +603,7 @@ const ChecksheetViewer: React.FC<ChecksheetViewerProps> = ({
                           onClick={() => {
                             setEditingItemId(item.id);
                             setSubmissionContent(item.submission?.content || '');
+                            setSubmissionFile(null); // Файл нужно загружать заново
                           }}
                           className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 flex items-center gap-1"
                         >
@@ -589,15 +629,36 @@ const ChecksheetViewer: React.FC<ChecksheetViewerProps> = ({
                   {editingItemId === item.id && (
                     <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
                       <label className="block text-xs font-semibold text-slate-700 mb-2">
-                        {item.type === 'essay' ? 'Напишите эссе:' : 'Сделайте зарисовку/описание:'}
+                        {item.type === 'essay' ? 'Напишите эссе:' : item.type === 'sketch' ? 'Сделайте зарисовку/описание:' : 'Выполните задание:'}
                       </label>
                       <textarea
                         value={submissionContent}
                         onChange={(e) => setSubmissionContent(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[120px] text-sm"
-                        placeholder={item.type === 'essay' ? 'Введите текст эссе...' : 'Опишите зарисовку...'}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[120px] text-sm mb-3"
+                        placeholder={item.type === 'essay' ? 'Введите текст эссе...' : item.type === 'sketch' ? 'Опишите зарисовку или загрузите файл...' : 'Введите ответ...'}
                       />
-                      <div className="flex gap-2 mt-2">
+                      {/* Загрузка файла для эссе и зарисовок */}
+                      {(item.type === 'essay' || item.type === 'sketch') && (
+                        <div className="mb-3">
+                          <label className="block text-xs font-semibold text-slate-700 mb-2">
+                            Загрузить файл (опционально):
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="file"
+                              accept={item.type === 'sketch' ? 'image/*,.pdf' : '.pdf,.doc,.docx,.txt'}
+                              onChange={(e) => setSubmissionFile(e.target.files?.[0] || null)}
+                              className="flex-1 text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                            />
+                            {submissionFile && (
+                              <span className="text-xs text-slate-600">
+                                {submissionFile.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={() => handleSubmitItem(item.id)}
@@ -611,6 +672,7 @@ const ChecksheetViewer: React.FC<ChecksheetViewerProps> = ({
                           onClick={() => {
                             setEditingItemId(null);
                             setSubmissionContent('');
+                            setSubmissionFile(null);
                           }}
                           className="px-4 py-2 bg-slate-400 text-white rounded-lg text-sm font-bold hover:bg-slate-500"
                         >

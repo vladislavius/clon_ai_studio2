@@ -39,3 +39,4 @@ SELECT
   auth.jwt() -> 'user_metadata' ->> 'is_admin' as is_admin_flag;
 
 
+
