@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Users, Briefcase, Cake, FileDown, Plus, Search, Menu, LayoutGrid, Database, Settings as SettingsIcon, Loader2, LogOut, TrendingUp, WifiOff, Network, List, ChevronLeft, ChevronRight, X, Shield, Edit3, Lock, Filter, UserCheck, FileText, Upload } from 'lucide-react';
+import { Users, Briefcase, Cake, FileDown, Plus, Search, Menu, LayoutGrid, Database, Settings as SettingsIcon, Loader2, LogOut, TrendingUp, WifiOff, Network, List, ChevronLeft, ChevronRight, X, Shield, Edit3, Lock, Filter, UserCheck, FileText, Upload, GraduationCap } from 'lucide-react';
 import EmployeeList from './components/EmployeeList';
 import EmployeeModal from './components/EmployeeModal';
 import Birthdays from './components/Birthdays';
@@ -13,6 +13,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { OnboardingDashboard } from './components/OnboardingDashboard';
 import { DocumentsDashboard } from './components/DocumentsDashboard';
 import { ReceivedDocumentsDashboard } from './components/ReceivedDocumentsDashboard';
+import { AcademyDashboard } from './components/AcademyDashboard';
 import AddEmployeeWizard from './components/AddEmployeeWizard';
 import HatFolderEditor from './components/HatFolderEditor';
 import { ORGANIZATION_STRUCTURE, ADMIN_EMAILS, DEPT_SORT_ORDER } from './constants';
@@ -425,6 +426,10 @@ function App() {
                   {!isSidebarCollapsed && <span className="whitespace-nowrap">Сотрудники</span>}
                 </button>
               )}
+              <button onClick={() => handleViewChange('academy')} className={`w-full flex items-center gap-2.5 md:gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg md:rounded-xl transition-all font-medium group relative text-sm md:text-base ${currentView === 'academy' ? 'bg-purple-50 text-purple-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}>
+                <div className="flex-shrink-0"><GraduationCap size={18} className="md:w-5 md:h-5" /></div>
+                {!isSidebarCollapsed && <span className="whitespace-nowrap">Академия</span>}
+              </button>
             </div>
 
             <div>
@@ -442,6 +447,7 @@ function App() {
                 ))}
               </div>
             </div>
+
 
             {isAdmin && (
               <div className="mt-4 md:mt-6 border-t border-slate-100 pt-3 md:pt-4">
@@ -545,6 +551,10 @@ function App() {
 
             <div className={currentView === 'statistics' ? 'h-full flex flex-col relative' : 'hidden'}>
               <StatisticsTab employees={employees} isOffline={isOffline} selectedDeptId={selectedDept} isAdmin={isAdmin} />
+            </div>
+
+            <div className={currentView === 'academy' ? 'flex flex-col relative' : 'hidden'}>
+              <AcademyDashboard isAdmin={isAdmin} employees={employees} />
             </div>
 
 

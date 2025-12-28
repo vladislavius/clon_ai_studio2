@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'; // Добавлен useCallback
 import { ORGANIZATION_STRUCTURE, ROLE_STAT_TEMPLATES, HANDBOOK_STATISTICS } from '../constants';
-import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon, Calendar, Info, HelpCircle, ArrowDownUp, AlertCircle, Phone, User, HeartPulse, File, Lock, DownloadCloud, Link2, Unlink, Sparkles, Copy, Edit2, Layers, Loader2, Minus, Wallet, CreditCard, Landmark, Globe, List, Check, FolderOpen, Clock } from 'lucide-react';
-import { Employee as EmployeeType, Attachment, EmergencyContact, StatisticDefinition, StatisticValue, WiseCondition } from '../types';
+import { X, Save, Upload, FileText, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, Printer, Download, Link as LinkIcon, Image as ImageIcon, Calendar, Info, HelpCircle, ArrowDownUp, AlertCircle, Phone, User, HeartPulse, File, Lock, DownloadCloud, Link2, Unlink, Sparkles, Copy, Edit2, Layers, Loader2, Minus, Wallet, CreditCard, Landmark, Globe, List, Check, FolderOpen, Clock, GraduationCap, BookOpen, ArrowUp, ArrowDown, Lock as LockIcon } from 'lucide-react';
+import { Employee as EmployeeType, Attachment, EmergencyContact, StatisticDefinition, StatisticValue, WiseCondition, DevelopmentPlan, DevelopmentCourse } from '../types';
 import { supabase } from '../supabaseClient';
 import StatsChart from './StatsChart';
 import { format, subDays, getDay } from 'date-fns';
@@ -764,8 +764,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                             { id: 'finance', label: '4. Финансы', restricted: true },
                             { id: 'files', label: '5. Файлы', restricted: true },
                             { id: 'stats', label: '6. Статистика', icon: <TrendingUp size={14} />, restricted: false },
-                            { id: 'hatfolder', label: '7. Шляпная папка', icon: <FolderOpen size={14} />, restricted: false },
-                            ...(isTrainee ? [{ id: 'trainee', label: '8. Чек-поинты стажера', icon: <Clock size={14} />, restricted: false }] : [])
+                            { id: 'development', label: '7. Карта развития', icon: <GraduationCap size={14} />, restricted: false },
+                            { id: 'hatfolder', label: '8. Шляпная папка', icon: <FolderOpen size={14} />, restricted: false },
+                            ...(isTrainee ? [{ id: 'trainee', label: '9. Чек-поинты стажера', icon: <Clock size={14} />, restricted: false }] : [])
                         ].map(tab => {
                             if (isReadOnly && tab.restricted) return null;
                             return (
@@ -1105,6 +1106,13 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
                             )}
 
                             {/* TAB: HAT FOLDER */}
+                            {activeTab === 'development' && (
+                                <DevelopmentPlanTab
+                                    employee={formData}
+                                    setEmployee={setFormData}
+                                    isReadOnly={isReadOnly}
+                                />
+                            )}
                             {activeTab === 'hatfolder' && (
                                 <div className="space-y-8 animate-in fade-in slide-in-from-right-4">
                                     <section>
@@ -1607,6 +1615,269 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ isOpen, isReadOnly = fals
             )}
 
             <ConfirmationModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} onConfirm={confirmModal.onConfirm} onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))} isDanger={true} confirmLabel="Удалить" />
+        </div>
+    );
+};
+
+// Компонент для управления картой развития сотрудника
+const DevelopmentPlanTab: React.FC<{
+    employee: EmployeeType;
+    setEmployee: React.Dispatch<React.SetStateAction<EmployeeType>>;
+    isReadOnly?: boolean;
+}> = ({ employee, setEmployee, isReadOnly }) => {
+    const toast = useToast();
+    const [availableCourses, setAvailableCourses] = useState<Array<{ id: string; title: string; description: string }>>([]);
+    const [selectedCourseId, setSelectedCourseId] = useState('');
+    const [loadingCourses, setLoadingCourses] = useState(false);
+
+    // Загружаем доступные курсы
+    useEffect(() => {
+        const loadCourses = () => {
+            setLoadingCourses(true);
+            try {
+                const savedCourses = localStorage.getItem('courses');
+                if (savedCourses) {
+                    const parsed = JSON.parse(savedCourses);
+                    setAvailableCourses(parsed.map((c: any) => ({ id: c.id, title: c.title, description: c.description || '' })));
+                }
+            } catch (err) {
+                console.error('Ошибка загрузки курсов:', err);
+            } finally {
+                setLoadingCourses(false);
+            }
+        };
+        loadCourses();
+    }, []);
+
+    const developmentPlan = employee.development_plan || { courses: [] };
+    const courses = developmentPlan.courses || [];
+
+    const addCourse = () => {
+        if (!selectedCourseId) {
+            toast.error('Выберите курс');
+            return;
+        }
+
+        const course = availableCourses.find(c => c.id === selectedCourseId);
+        if (!course) {
+            toast.error('Курс не найден');
+            return;
+        }
+
+        // Проверяем, не добавлен ли уже этот курс
+        if (courses.some(c => c.courseId === selectedCourseId)) {
+            toast.error('Этот курс уже добавлен в карту развития');
+            return;
+        }
+
+        const newCourse: DevelopmentCourse = {
+            courseId: selectedCourseId,
+            order: courses.length + 1,
+            assignedAt: new Date().toISOString(),
+        };
+
+        setEmployee(prev => ({
+            ...prev,
+            development_plan: {
+                courses: [...courses, newCourse]
+            }
+        }));
+
+        setSelectedCourseId('');
+        toast.success('Курс добавлен в карту развития');
+    };
+
+    const removeCourse = (courseId: string) => {
+        const updatedCourses = courses
+            .filter(c => c.courseId !== courseId)
+            .map((c, index) => ({ ...c, order: index + 1 }));
+        
+        setEmployee(prev => ({
+            ...prev,
+            development_plan: {
+                courses: updatedCourses
+            }
+        }));
+        toast.success('Курс удален из карты развития');
+    };
+
+    const moveCourse = (courseId: string, direction: 'up' | 'down') => {
+        const index = courses.findIndex(c => c.courseId === courseId);
+        if (index === -1) return;
+
+        if (direction === 'up' && index === 0) return;
+        if (direction === 'down' && index === courses.length - 1) return;
+
+        const newIndex = direction === 'up' ? index - 1 : index + 1;
+        const updatedCourses = [...courses];
+        [updatedCourses[index], updatedCourses[newIndex]] = [updatedCourses[newIndex], updatedCourses[index]];
+        
+        // Обновляем порядок
+        updatedCourses.forEach((c, i) => {
+            c.order = i + 1;
+        });
+
+        setEmployee(prev => ({
+            ...prev,
+            development_plan: {
+                courses: updatedCourses
+            }
+        }));
+        toast.success('Порядок курса изменен');
+    };
+
+    const getCourseInfo = (courseId: string) => {
+        return availableCourses.find(c => c.id === courseId);
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+            <section>
+                <h3 className="text-lg font-bold text-slate-800 mb-5 flex items-center gap-2">
+                    <GraduationCap className="text-purple-500" size={20} /> Карта развития сотрудника
+                </h3>
+                <p className="text-sm text-slate-600 mb-6">
+                    Назначьте курсы сотруднику в порядке их прохождения. Следующий курс откроется только после аттестации предыдущего.
+                </p>
+
+                {/* Добавление нового курса */}
+                {!isReadOnly && (
+                    <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-200">
+                        <h4 className="text-sm font-bold text-slate-700 mb-3">Добавить курс</h4>
+                        <div className="flex gap-2">
+                            <select
+                                value={selectedCourseId}
+                                onChange={(e) => setSelectedCourseId(e.target.value)}
+                                className="flex-1 px-4 py-2.5 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            >
+                                <option value="">Выберите курс...</option>
+                                {availableCourses
+                                    .filter(c => !courses.some(dc => dc.courseId === c.id))
+                                    .map(course => (
+                                        <option key={course.id} value={course.id}>
+                                            {course.title}
+                                        </option>
+                                    ))}
+                            </select>
+                            <button
+                                onClick={addCourse}
+                                disabled={!selectedCourseId || loadingCourses}
+                                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                <Plus size={18} /> Добавить
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Список курсов в карте развития */}
+                <div className="space-y-3">
+                    {courses.length === 0 ? (
+                        <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300">
+                            <BookOpen className="mx-auto text-slate-300 mb-3" size={48} />
+                            <p className="text-slate-500 font-semibold mb-1">Курсы не назначены</p>
+                            <p className="text-sm text-slate-400">
+                                {isReadOnly 
+                                    ? 'Курсы будут отображаться здесь после назначения' 
+                                    : 'Добавьте первый курс выше'}
+                            </p>
+                        </div>
+                    ) : (
+                        courses
+                            .sort((a, b) => a.order - b.order)
+                            .map((dc, index) => {
+                                const courseInfo = getCourseInfo(dc.courseId);
+                                const isLocked = index > 0 && !courses[index - 1]?.isCertified;
+                                
+                                return (
+                                    <div
+                                        key={dc.courseId}
+                                        className={`bg-white rounded-xl border-2 p-4 ${
+                                            isLocked 
+                                                ? 'border-slate-300 opacity-60' 
+                                                : 'border-slate-200 hover:border-blue-300'
+                                        } transition-all`}
+                                    >
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex items-start gap-3 flex-1">
+                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
+                                                    isLocked 
+                                                        ? 'bg-slate-300 text-slate-600' 
+                                                        : 'bg-blue-100 text-blue-600'
+                                                }`}>
+                                                    {dc.order}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <h4 className="font-bold text-slate-800">
+                                                            {courseInfo?.title || `Курс ${dc.courseId}`}
+                                                        </h4>
+                                                        {isLocked && (
+                                                            <LockIcon size={16} className="text-slate-400" />
+                                                        )}
+                                                        {dc.isCertified && (
+                                                            <CheckCircle2 size={18} className="text-green-600" />
+                                                        )}
+                                                    </div>
+                                                    {courseInfo?.description && (
+                                                        <p className="text-sm text-slate-600 mb-2 line-clamp-2">
+                                                            {courseInfo.description}
+                                                        </p>
+                                                    )}
+                                                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                                                        {dc.progress !== undefined && (
+                                                            <span>Прогресс: {dc.progress}%</span>
+                                                        )}
+                                                        {dc.assignedAt && (
+                                                            <span>Назначен: {new Date(dc.assignedAt).toLocaleDateString('ru-RU')}</span>
+                                                        )}
+                                                        {dc.isCertified && dc.certifiedAt && (
+                                                            <span className="text-green-600 font-semibold">
+                                                                Аттестован: {new Date(dc.certifiedAt).toLocaleDateString('ru-RU')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {isLocked && (
+                                                        <p className="text-xs text-slate-500 mt-2 italic">
+                                                            Откроется после аттестации предыдущего курса
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {!isReadOnly && (
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => moveCourse(dc.courseId, 'up')}
+                                                        disabled={index === 0}
+                                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                                        title="Переместить вверх"
+                                                    >
+                                                        <ArrowUp size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => moveCourse(dc.courseId, 'down')}
+                                                        disabled={index === courses.length - 1}
+                                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                                        title="Переместить вниз"
+                                                    >
+                                                        <ArrowDown size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => removeCourse(dc.courseId)}
+                                                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Удалить курс"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                    )}
+                </div>
+            </section>
         </div>
     );
 };

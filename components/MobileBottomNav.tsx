@@ -1,5 +1,5 @@
 import React from 'react';
-import { Network, Users, TrendingUp, Settings } from 'lucide-react';
+import { Network, Users, TrendingUp, Settings, GraduationCap } from 'lucide-react';
 import { ViewMode } from '../types';
 
 interface MobileBottomNavProps {
@@ -78,6 +78,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             onClick={() => onViewChange('employees')}
           />
         )}
+        <NavButton
+          icon={<GraduationCap size={22} />}
+          label="Академия"
+          active={currentView === 'academy'}
+          onClick={() => onViewChange('academy')}
+        />
         {isAdmin && (
           <NavButton
             icon={<Settings size={22} />}

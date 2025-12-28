@@ -35,6 +35,22 @@ export interface Employee {
   custom_fields: CustomField[];
   attachments: Attachment[];
   version?: number; // For optimistic locking - автоматически увеличивается при каждом обновлении
+  development_plan?: DevelopmentPlan; // Карта развития сотрудника
+}
+
+export interface DevelopmentPlan {
+  courses: DevelopmentCourse[]; // Список курсов в порядке прохождения
+}
+
+export interface DevelopmentCourse {
+  courseId: string; // ID курса
+  order: number; // Порядок прохождения (1, 2, 3...)
+  assignedAt?: string; // Дата назначения курса
+  startedAt?: string; // Дата начала прохождения
+  completedAt?: string; // Дата завершения всех заданий
+  certifiedAt?: string; // Дата аттестации/сертификации
+  isCertified?: boolean; // Прошел ли аттестацию
+  progress?: number; // Прогресс в процентах (0-100)
 }
 
 export interface EmergencyContact {
@@ -212,7 +228,7 @@ export interface StatisticValue {
   notes?: string;
 }
 
-export type ViewMode = 'employees' | 'org_chart' | 'statistics' | 'settings';
+export type ViewMode = 'employees' | 'org_chart' | 'statistics' | 'settings' | 'academy';
 export type EmployeeSubView = 'list' | 'birthdays' | 'onboarding' | 'documents';
 export type DocumentsSubView = 'sent' | 'received';
 

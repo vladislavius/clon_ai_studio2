@@ -452,7 +452,7 @@ const OrgChart: React.FC<OrgChartProps> = ({ employees, orgStructure, onUpdateOr
                                                 <div className="flex justify-between items-center mb-1.5 md:mb-2 gap-1.5">
                                                     <div className="flex items-center gap-1.5 md:gap-2 flex-1 min-w-0">
                                                         <span className="text-[10px] md:text-xs font-black flex-shrink-0 leading-none" style={{ color: deptColor }}>{dept.name.split('.')[0]}</span>
-                                                        <h3 className="text-[10px] md:text-xs font-semibold md:font-bold text-slate-800 leading-tight break-words truncate">{dept.fullName.split(':')[1]?.trim() || dept.name.replace(/^\d+\.\s*/, '')}</h3>
+                                                        <h3 className="text-xs md:text-sm font-semibold md:font-bold text-slate-800 leading-tight break-words truncate">{dept.fullName.split(':')[1]?.trim() || dept.name.replace(/^\d+\.\s*/, '')}</h3>
                                                     </div>
                                                     <div className="bg-slate-100 px-1.5 md:px-2 py-0.5 rounded-full text-[8px] md:text-[9px] font-bold text-slate-600 flex items-center gap-0.5 md:gap-1 flex-shrink-0"><Users size={9} className="md:w-[10px] md:h-[10px]" />{employees.filter(e => e.department?.includes(deptId)).length}</div>
                                                 </div>
